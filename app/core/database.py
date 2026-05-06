@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from urllib.parse import urlparse
 
@@ -9,7 +10,15 @@ from sqlalchemy.ext.asyncio import (
 
 from app.core.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# 시크릿을 노출하지 않으면서 Cloud Run에서 실제 어떤 endpoint를 보고 있는지 확인.
+_p = urlparse(settings.DATABASE_URL)
+logger.warning(
+    "DB engine config — scheme=%s user=%s host=%s port=%s db=%s",
+    _p.scheme, _p.username, _p.hostname, _p.port, (_p.path or "/").lstrip("/"),
+)
 
 
 def _is_supabase_pooler(url: str) -> bool:

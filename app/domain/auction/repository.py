@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
 
 from app.domain.auction.schemas import (
+    AssetType,
     AuctionDetail,
     AuctionListItem,
     AuctionStatsResponse,
     AuctionStatus,
     AuctionUpsertItem,
     PropertyCategory,
+    VehicleCategory,
 )
 
 
@@ -24,7 +26,9 @@ class AuctionRepository(ABC):
         min_lat: float,
         max_lng: float,
         max_lat: float,
-        category: PropertyCategory | None = None,
+        asset_type: AssetType | None = None,
+        property_category: PropertyCategory | None = None,
+        vehicle_category: VehicleCategory | None = None,
         status: AuctionStatus | None = None,
         limit: int = 200,
     ) -> list[AuctionListItem]:

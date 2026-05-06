@@ -28,13 +28,10 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRES_MIN: int = 60
     JWT_REFRESH_TOKEN_EXPIRES_DAYS: int = 14
 
-    # Kakao OAuth
+    # Kakao OAuth (Local API와 동일 키 공유)
     KAKAO_REST_API_KEY: str = ""
     KAKAO_REDIRECT_URI: str = ""
     KAKAO_CLIENT_SECRET: str = ""
-
-    # Kakao Local API
-    KAKAO_LOCAL_REST_API_KEY: str = ""
 
     # Onbid
     ONBID_SERVICE_KEY: str = ""

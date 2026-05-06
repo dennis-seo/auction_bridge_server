@@ -1,146 +1,375 @@
-"""온비드 → 정규화 → 지오코딩 → DB upsert 파이프라인."""
+"""온비드 차세대 OpenAPI → 정규화 → 지오코딩 → DB upsert 파이프라인.
+
+asset_type별로 별도 normalize 함수를 가지며, 결과는 모두 `AuctionUpsertItem`.
+"""
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.domain.auction.repository import AuctionRepository
 from app.domain.auction.schemas import (
+    AssetType,
     AuctionSource,
     AuctionStatus,
     AuctionUpsertItem,
+    MovableAttrs,
     PropertyCategory,
+    RealtyAttrs,
+    VehicleAttrs,
+    VehicleCategory,
 )
 from app.infrastructure.external.kakao_geocoder import KakaoGeocoder
 from app.infrastructure.external.onbid_client import (
+    OnbidAssetService,
     OnbidClient,
     OnbidQuotaExceeded,
-    OnbidTopCategory,
+    PrptDivCd,
 )
 
 logger = logging.getLogger(__name__)
 
 
-# 온비드 응답의 카테고리(CTGR_FULL_NM 또는 CTGR_NM) 텍스트를 PropertyCategory enum으로.
-# 매칭 안 되면 ETC로 떨어뜨리고, raw는 metadata에 남아 있으므로 사후 보강 가능.
-_CATEGORY_KEYWORDS: list[tuple[PropertyCategory, tuple[str, ...]]] = [
-    (PropertyCategory.APARTMENT, ("아파트",)),
-    (PropertyCategory.OFFICETEL, ("오피스텔",)),
-    (PropertyCategory.VILLA, ("빌라", "연립", "다세대")),
-    (PropertyCategory.HOUSE, ("단독", "다가구", "주택")),
-    (PropertyCategory.COMMERCIAL, ("상가", "근린", "업무", "사무실", "점포")),
-    (PropertyCategory.LAND, ("토지", "임야", "전", "답", "대지")),
-]
+KST = timezone(timedelta(hours=9))
 
 
-def map_category(*texts: str | None) -> PropertyCategory:
-    blob = " ".join(t for t in texts if t)
-    for cat, keywords in _CATEGORY_KEYWORDS:
-        if any(kw in blob for kw in keywords):
-            return cat
-    return PropertyCategory.ETC
+# =====================================================================
+# 코드 / 이름 매핑
+# =====================================================================
 
-
-# 온비드 진행상태 텍스트 → AuctionStatus
-def map_status(*texts: str | None) -> AuctionStatus:
-    blob = " ".join(t for t in texts if t)
-    if any(k in blob for k in ("낙찰", "매각", "성공")):
+# pbctStatCd → AuctionStatus
+def map_status(code: str | None, name: str | None) -> AuctionStatus:
+    if code:
+        c = code.strip()
+        if c in ("0001", "0009"):
+            return AuctionStatus.SCHEDULED
+        if c in ("0002", "0006", "0003"):
+            # 0003 입찰마감 — 결과는 입찰결과 API로 보강 전까지 ONGOING로 둔다
+            return AuctionStatus.ONGOING
+        if c == "0011":
+            return AuctionStatus.FAILED
+    blob = (name or "").strip()
+    if any(k in blob for k in ("낙찰", "매각결정", "성공")):
         return AuctionStatus.SOLD
-    if any(k in blob for k in ("유찰",)):
+    if "유찰" in blob:
         return AuctionStatus.FAILED
-    if any(k in blob for k in ("취하", "변경", "정지", "취소")):
+    if any(k in blob for k in ("취하", "취소", "변경", "정지")):
         return AuctionStatus.CANCELLED
-    if any(k in blob for k in ("진행", "공고",)):
+    if "진행" in blob:
         return AuctionStatus.ONGOING
     return AuctionStatus.SCHEDULED
 
 
-def parse_int(s: str | None) -> int | None:
-    if not s:
-        return None
-    digits = "".join(c for c in s if c.isdigit())
-    return int(digits) if digits else None
+# 세부 분류(scls/title) 우선 매칭 — 주거용건물 내부에서 아파트/오피스텔/빌라/주택을 분리
+_REALTY_SPECIFIC: list[tuple[PropertyCategory, tuple[str, ...]]] = [
+    (PropertyCategory.APARTMENT, ("아파트",)),
+    (PropertyCategory.OFFICETEL, ("오피스텔",)),
+    (PropertyCategory.VILLA, ("빌라", "연립", "다세대")),
+    (PropertyCategory.HOUSE, ("단독", "다가구", "주택", "기숙사")),
+]
+
+# mcls(중분류)별 기본 매핑 — 세부 분류로 안 잡힌 경우의 fallback
+_REALTY_MCLS: list[tuple[PropertyCategory, tuple[str, ...]]] = [
+    (PropertyCategory.LAND, ("토지",)),
+    (PropertyCategory.HOUSE, ("주거용",)),
+    (PropertyCategory.COMMERCIAL, ("상가용", "업무용", "산업용", "특수용")),
+]
+
+# 마지막 키워드 fallback (모든 텍스트 blob 검색)
+_REALTY_FALLBACK: list[tuple[PropertyCategory, tuple[str, ...]]] = [
+    (PropertyCategory.COMMERCIAL, (
+        "상가", "근린", "업무", "사무실", "점포",
+        "공장", "창고", "판매시설", "숙박",
+    )),
+    (PropertyCategory.LAND, ("임야", "전답", "대지", "잡종지", "과수원", "도로", "공원")),
+]
 
 
-def parse_dt(s: str | None) -> datetime | None:
+def map_property_category(
+    scls: str | None,
+    mcls: str | None,
+    lcls: str | None = None,
+    title: str | None = None,
+) -> PropertyCategory:
+    # 1) scls/title 안의 세부 분류 키워드 매칭
+    specific_blob = " ".join(t for t in (scls, title) if t)
+    for cat, keywords in _REALTY_SPECIFIC:
+        if any(kw in specific_blob for kw in keywords):
+            return cat
+    # 2) mcls 매핑
+    if mcls:
+        for cat, keywords in _REALTY_MCLS:
+            if any(kw in mcls for kw in keywords):
+                return cat
+    # 3) 전체 blob fallback
+    full_blob = " ".join(t for t in (scls, mcls, lcls, title) if t)
+    for cat, keywords in _REALTY_FALLBACK:
+        if any(kw in full_blob for kw in keywords):
+            return cat
+    return PropertyCategory.ETC
+
+
+# 차량 카테고리. carVhknNm은 실데이터에서 모델명(예 "쏘나타")이 들어가는 경우가 많아
+# usg_scls_nm을 1순위 매핑 소스로 사용한다.
+_VEHICLE_KEYWORDS: list[tuple[VehicleCategory, tuple[str, ...]]] = [
+    (VehicleCategory.SEDAN, ("승용", "SUV")),
+    (VehicleCategory.VAN, ("승합",)),
+    (VehicleCategory.TRUCK, ("화물", "트럭")),
+    (VehicleCategory.BUS, ("버스",)),
+    (VehicleCategory.MOTORCYCLE, ("이륜", "오토바이")),
+    (VehicleCategory.SPECIAL, ("특수", "지게차", "굴삭기", "중기", "소방", "안전", "인명구조")),
+]
+
+
+def map_vehicle_category(*texts: str | None) -> VehicleCategory:
+    blob = " ".join(t for t in texts if t)
+    for cat, keywords in _VEHICLE_KEYWORDS:
+        if any(kw in blob for kw in keywords):
+            return cat
+    return VehicleCategory.ETC
+
+
+# =====================================================================
+# 파서 helpers
+# =====================================================================
+def parse_int(v: Any) -> int | None:
+    if v is None:
+        return None
+    s = str(v).strip()
     if not s:
         return None
-    s = s.strip()
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y%m%d%H%M%S", "%Y%m%d"):
-        try:
-            return datetime.strptime(s, fmt)
-        except ValueError:
-            continue
+    digits = "".join(c for c in s if c.isdigit() or c == "-")
+    if not digits or digits == "-":
+        return None
+    try:
+        return int(digits)
+    except ValueError:
+        return None
+
+
+def parse_float(v: Any) -> float | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def parse_yn(v: Any) -> bool | None:
+    if v is None:
+        return None
+    s = str(v).strip().upper()
+    if s == "Y":
+        return True
+    if s == "N":
+        return False
     return None
 
 
-def split_region(address: str | None) -> tuple[str | None, str | None]:
-    """간단한 시도/시군구 분리. 정밀화는 추후."""
-    if not address:
-        return (None, None)
-    parts = address.split()
-    sido = parts[0] if len(parts) >= 1 else None
-    sigungu = parts[1] if len(parts) >= 2 else None
-    return (sido, sigungu)
+def parse_dt(v: Any) -> datetime | None:
+    """yyyyMMddHHmm / yyyyMMddHHmmss / yyyyMMdd 등 다양한 포맷 지원. KST 부여."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s.isdigit():
+        return None
+    fmts = {
+        14: "%Y%m%d%H%M%S",
+        12: "%Y%m%d%H%M",
+        10: "%Y%m%d%H",
+        8: "%Y%m%d",
+    }
+    fmt = fmts.get(len(s))
+    if fmt is None:
+        return None
+    try:
+        dt = datetime.strptime(s, fmt).replace(tzinfo=KST)
+    except ValueError:
+        return None
+    # 비현실적 sentinel(예: 2999-12-30) 제거
+    if not (1990 <= dt.year <= 2100):
+        return None
+    return dt
 
 
-def normalize_item(raw: dict[str, Any]) -> AuctionUpsertItem | None:
-    """온비드 응답 한 건 → AuctionUpsertItem. external_id 또는 주소 없으면 None."""
-    external_id = (
-        raw.get("CLTR_NO") or raw.get("cltrNo") or raw.get("PLNM_NO") or ""
-    ).strip()
-    if not external_id:
+def compose_address(
+    sido: str | None, sigungu: str | None, emd: str | None, fallback: str | None = None
+) -> str | None:
+    parts = [p for p in (sido, sigungu, emd) if p]
+    if parts:
+        return " ".join(parts)
+    return fallback
+
+
+# =====================================================================
+# 공통 base normalize
+# =====================================================================
+def _normalize_common(raw: dict[str, Any], asset_type: AssetType) -> AuctionUpsertItem | None:
+    cltr = (raw.get("cltrMngNo") or "").strip()
+    pbct = parse_int(raw.get("pbctCdtnNo"))
+    if not cltr or pbct is None:
         return None
 
-    address = (
-        raw.get("LDNM_ADRS")
-        or raw.get("ldnmAdrs")
-        or raw.get("RDNM_ADRS")
-        or raw.get("rdnmAdrs")
-        or raw.get("ADRS")
-        or ""
-    ).strip()
-    if not address:
-        return None
-
-    title = (raw.get("CLTR_NM") or raw.get("cltrNm") or "").strip() or None
-    case_number = (
-        raw.get("PLNM_NO") or raw.get("PBCT_NO") or raw.get("plnmNo") or ""
-    ).strip() or None
-    category_text = (raw.get("CTGR_FULL_NM") or raw.get("CTGR_NM") or "").strip()
-    status_text = (raw.get("PBCT_STAT") or raw.get("CLTR_STAT_NM") or "").strip()
-    agency_name = (raw.get("INS_NM") or raw.get("DPSL_INS_NM") or "").strip() or None
-
-    sido, sigungu = split_region(address)
+    sido = (raw.get("lctnSdnm") or "").strip() or None
+    sigungu = (raw.get("lctnSggnm") or "").strip() or None
+    emd = (raw.get("lctnEmdNm") or "").strip() or None
+    address = compose_address(sido, sigungu, emd)
 
     return AuctionUpsertItem(
         source=AuctionSource.ONBID,
-        external_id=external_id,
-        case_number=case_number,
-        category=map_category(category_text, title),
-        status=map_status(status_text),
-        title=title,
-        address=address,
+        asset_type=asset_type,
+        status=map_status(raw.get("pbctStatCd"), raw.get("pbctStatNm")),
+        cltr_mng_no=cltr,
+        pbct_cdtn_no=pbct,
+        onbid_cltr_no=parse_int(raw.get("onbidCltrno")),
+        onbid_pbanc_no=parse_int(raw.get("onbidPbancNo")),
+        pbct_no=parse_int(raw.get("pbctNo")),
+        pbct_nsq=(raw.get("pbctNsq") or None),
+        pbct_sn=(raw.get("pbctsn") or None),
+        title=(raw.get("onbidCltrNm") or "").strip() or None,
+        pbct_stat_cd=(raw.get("pbctStatCd") or None),
+        pbct_stat_nm=(raw.get("pbctStatNm") or None),
+        prpt_div_cd=(raw.get("prptDivCd") or None),
+        prpt_div_nm=(raw.get("prptDivNm") or None),
+        dsps_mthod_cd=(raw.get("dspsMthodCd") or None),
+        dsps_mthod_nm=(raw.get("dspsMthodNm") or None),
+        bid_div_cd=(raw.get("bidDivCd") or None),
+        bid_div_nm=(raw.get("bidDivNm") or None),
+        bid_mthod_cd=(raw.get("bidMthodCd") or None),
+        bid_mthod_nm=(raw.get("bidMthodNm") or None),
+        cptn_mthod_cd=(raw.get("cptnMthodCd") or None),
+        cptn_mthod_nm=(raw.get("cptnMthodNm") or None),
+        totalamt_unpc_div_cd=(raw.get("totalamtUnpcDivCd") or None),
+        totalamt_unpc_div_nm=(raw.get("totalamtUnpcDivNm") or None),
+        usg_lcls_id=(raw.get("cltrUsgLclsCtgrId") or None),
+        usg_lcls_nm=(raw.get("cltrUsgLclsCtgrNm") or None),
+        usg_mcls_id=(raw.get("cltrUsgMclsCtgrId") or None),
+        usg_mcls_nm=(raw.get("cltrUsgMclsCtgrNm") or None),
+        usg_scls_id=(raw.get("cltrUsgSclsCtgrId") or None),
+        usg_scls_nm=(raw.get("cltrUsgSclsCtgrNm") or None),
+        ltno_pnu=(raw.get("ltnoPnu") or None),
+        rdnm_pnu=(raw.get("rdnmPnu") or None),
         region_sido=sido,
         region_sigungu=sigungu,
-        appraisal_price=parse_int(
-            raw.get("APSL_AMT") or raw.get("APPR_PRC")
-        ),
-        minimum_bid_price=parse_int(
-            raw.get("MIN_BID_PRC") or raw.get("MIN_BID_AMT")
-        ),
-        bid_deposit=parse_int(raw.get("BID_DPST")),
-        auction_date=parse_dt(
-            raw.get("BID_BEGIN_DTM") or raw.get("BID_BEGN_DT") or raw.get("PBCT_BEGN_DTM")
-        ),
-        agency_name=agency_name,
-        description=(raw.get("CLTR_RM") or raw.get("BID_RM") or "").strip() or None,
+        region_emd=emd,
+        address=address,
+        appraisal_price=parse_int(raw.get("apslEvlAmt")),
+        min_bid_price=parse_int(raw.get("lowstBidPrcIndctCont")),
+        min_bid_price_text=(raw.get("lowstBidPrcIndctCont") or None),
+        first_bid_price=parse_int(raw.get("frstBidPrc")),
+        apsl_lowst_ratio=parse_float(raw.get("apslPrcCtrsLowstBidRto")),
+        frst_lowst_ratio=parse_float(raw.get("frstCtrsLowstBidPrcRto")),
+        fee_rate=parse_float(raw.get("feeRate")),
+        bid_begin_at=parse_dt(raw.get("cltrBidBgngDt")),
+        bid_end_at=parse_dt(raw.get("cltrBidEndDt")),
+        failed_count=parse_int(raw.get("usbdNft")) or 0,
+        progress_count=parse_int(raw.get("bidPrgnNft")) or 0,
+        pvct_trgt_yn=parse_yn(raw.get("pvctTrgtYn")),
+        batc_bid_yn=parse_yn(raw.get("batcBidYn")),
+        elec_grpr_use_yn=parse_yn(raw.get("eltrGrprUseYn")),
+        collb_bid_psbl_yn=parse_yn(raw.get("collbBidPsblYn")),
+        twtm_gthr_bid_psbl_yn=parse_yn(raw.get("twtmGthrBidPsblYn")),
+        subt_bid_psbl_yn=parse_yn(raw.get("subtBidPsblYn")),
+        request_org_nm=(raw.get("rqstOrgNm") or None),
+        announce_org_nm=(raw.get("orgNm") or None),
+        rent_method_nm=(raw.get("rentMthodNm") or None),
+        rent_period_text=(raw.get("rentPerdCont") or None),
+        evc_rsby_target=(raw.get("evcRsbyTrgtCont") or None),
+        dtbt_rqr_edtm=(raw.get("dtbtRqrEdtmCont") or None),
+        thumbnail_url=(raw.get("thnlImgUrlAdr") or None),
+        correction_yn=bool(parse_yn(raw.get("crtnYn"))),
+        modified_at=parse_dt(raw.get("mdfcnDt")),
         raw=raw,
     )
 
 
+# =====================================================================
+# asset_type별 normalize
+# =====================================================================
+def normalize_realty(raw: dict[str, Any]) -> AuctionUpsertItem | None:
+    item = _normalize_common(raw, AssetType.REALTY)
+    if item is None:
+        return None
+    item.realty = RealtyAttrs(
+        property_category=map_property_category(
+            scls=raw.get("cltrUsgSclsCtgrNm"),
+            mcls=raw.get("cltrUsgMclsCtgrNm"),
+            lcls=raw.get("cltrUsgLclsCtgrNm"),
+            title=raw.get("onbidCltrNm"),
+        ),
+        land_sqms=parse_float(raw.get("landSqms")),
+        bld_sqms=parse_float(raw.get("bldSqms")),
+        alc_yn=parse_yn(raw.get("alcYn")),
+    )
+    return item
+
+
+def normalize_movable(raw: dict[str, Any]) -> AuctionUpsertItem | None:
+    item = _normalize_common(raw, AssetType.MOVABLE)
+    if item is None:
+        return None
+    item.movable = MovableAttrs(
+        maker=(raw.get("cltrMkrNm") or None),
+        model_name=(raw.get("mdlNm") or None),
+        manufacture_year=(raw.get("mnftYr") or None),
+        quantity_text=(raw.get("qntyCont") or None),
+        production_place=(raw.get("prdlcPlorCont") or None),
+        use_period_year=parse_float(raw.get("usePerdQnty")),
+        size_text=(raw.get("mvastSizeCont") or None),
+        weight_text=(raw.get("cltrWt") or None),
+        custody_place=(raw.get("cltrCstdPlcNm") or None),
+        author_name=(raw.get("autrNm") or None),
+        membership_name=(raw.get("mbsNm") or None),
+        membership_section_text=(raw.get("mbsSctnoCont") or None),
+        commodity_name=(raw.get("mvastCmdtyNm") or None),
+        property_name=(raw.get("prptNm") or None),
+        product_name=(raw.get("cltrPrdctNm") or None),
+        supplier_item_name=(raw.get("splrItmNm") or None),
+    )
+    return item
+
+
+def normalize_vehicle(raw: dict[str, Any]) -> AuctionUpsertItem | None:
+    item = _normalize_common(raw, AssetType.VEHICLE)
+    if item is None:
+        return None
+    item.vehicle = VehicleAttrs(
+        vehicle_category=map_vehicle_category(
+            raw.get("cltrUsgSclsCtgrNm"),
+            raw.get("cltrUsgMclsCtgrNm"),
+            raw.get("carVhknNm"),
+        ),
+        maker=(raw.get("cltrMkrNm") or None),
+        vehicle_kind=(raw.get("carVhknNm") or None),
+        model_name=(raw.get("carMdlNm") or None),
+        year_model=(raw.get("yrmdl") or None),
+        plate_no=(raw.get("vhrnoCont") or None),
+        mileage_km=parse_int(raw.get("drvDstc")),
+        displacement_cc=parse_int(raw.get("dsvlm")),
+        transmission=(raw.get("pnsNm") or None),
+        fuel=(raw.get("fuelCont") or None),
+        color=(raw.get("carColrNm") or None),
+        quantity_text=(raw.get("qntyCont") or None),
+    )
+    return item
+
+
+_NORMALIZERS = {
+    OnbidAssetService.REALTY: normalize_realty,
+    OnbidAssetService.MOVABLE: normalize_movable,
+    OnbidAssetService.VEHICLE: normalize_vehicle,
+}
+
+
+# =====================================================================
+# Service
+# =====================================================================
 @dataclass(slots=True)
 class IngestStats:
     fetched: int = 0
@@ -149,15 +378,7 @@ class IngestStats:
     inserted: int = 0
     updated: int = 0
     pages: int = 0
-
-
-# 전국 카테고리 풀 - run_full에서 순회. 일 1,000건 한도 고려해 부동산 우선.
-DEFAULT_CATEGORY_CODES = (
-    OnbidTopCategory.REAL_ESTATE,
-    OnbidTopCategory.MOVABLE,
-    OnbidTopCategory.RIGHTS,
-    OnbidTopCategory.ETC,
-)
+    by_asset: dict[str, int] = field(default_factory=dict)
 
 
 class OnbidIngestService:
@@ -173,35 +394,41 @@ class OnbidIngestService:
 
     async def run_one(
         self,
+        asset: OnbidAssetService,
         *,
-        ctgr_hirk_id: str | None = None,
         max_pages: int = 1,
         num_of_rows: int = 100,
+        prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
+        pvct_trgt_yn: str = "N",
     ) -> IngestStats:
-        """단일 카테고리 일부 페이지만 적재 (수동 트리거용)."""
         return await self._run(
-            ctgr_hirk_id=ctgr_hirk_id,
+            asset=asset,
             max_pages=max_pages,
             num_of_rows=num_of_rows,
+            prpt_div_cd=prpt_div_cd,
+            pvct_trgt_yn=pvct_trgt_yn,
         )
 
     async def run_full(
         self,
         *,
-        max_pages_per_category: int = 50,
+        max_pages_per_asset: int = 50,
         num_of_rows: int = 200,
+        prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
+        pvct_trgt_yn: str = "N",
     ) -> IngestStats:
-        """모든 카테고리를 순회 (새벽 배치용)."""
         total = IngestStats()
-        for code in DEFAULT_CATEGORY_CODES:
+        for asset in OnbidAssetService:
             try:
                 s = await self._run(
-                    ctgr_hirk_id=code,
-                    max_pages=max_pages_per_category,
+                    asset=asset,
+                    max_pages=max_pages_per_asset,
                     num_of_rows=num_of_rows,
+                    prpt_div_cd=prpt_div_cd,
+                    pvct_trgt_yn=pvct_trgt_yn,
                 )
             except OnbidQuotaExceeded as e:
-                logger.warning("Quota exceeded — stopping run_full: %s", e)
+                logger.warning("Quota exceeded — stopping run_full at %s: %s", asset.value, e)
                 break
             total.fetched += s.fetched
             total.normalized += s.normalized
@@ -209,18 +436,25 @@ class OnbidIngestService:
             total.inserted += s.inserted
             total.updated += s.updated
             total.pages += s.pages
+            total.by_asset[asset.value] = s.normalized
         return total
 
     async def _run(
         self,
         *,
-        ctgr_hirk_id: str | None,
+        asset: OnbidAssetService,
         max_pages: int,
         num_of_rows: int,
+        prpt_div_cd: str | tuple[str, ...],
+        pvct_trgt_yn: str,
     ) -> IngestStats:
         stats = IngestStats()
-        async for page in self._client.iter_all_pages(
-            ctgr_hirk_id=ctgr_hirk_id,
+        normalizer = _NORMALIZERS[asset]
+
+        async for page in self._client.iter_assets(
+            asset,
+            prpt_div_cd=prpt_div_cd,
+            pvct_trgt_yn=pvct_trgt_yn,
             num_of_rows=num_of_rows,
             max_pages=max_pages,
         ):
@@ -228,28 +462,31 @@ class OnbidIngestService:
             stats.fetched += len(page.items)
             normalized: list[AuctionUpsertItem] = []
             for raw in page.items:
-                item = normalize_item(raw)
+                item = normalizer(raw)
                 if item is None:
                     continue
                 normalized.append(item)
             stats.normalized += len(normalized)
 
-            for item in normalized:
-                lng, lat = await self._geocoder.lookup(item.address)
-                if lng is not None and lat is not None:
-                    item.lng = lng
-                    item.lat = lat
-                    stats.geocoded += 1
+            # 부동산만 지오코딩 (동산/차량은 주소가 없거나 보관소라 우선순위 낮음)
+            if asset == OnbidAssetService.REALTY:
+                for item in normalized:
+                    if not item.address:
+                        continue
+                    lng, lat = await self._geocoder.lookup(item.address)
+                    if lng is not None and lat is not None:
+                        item.lng = lng
+                        item.lat = lat
+                        stats.geocoded += 1
 
             if normalized:
                 ins, upd = await self._repo.upsert_many(normalized)
                 stats.inserted += ins
                 stats.updated += upd
                 logger.info(
-                    "ingest page=%d ctgr=%s fetched=%d normalized=%d "
-                    "geocoded=%d inserted=%d updated=%d",
-                    page.page_no, ctgr_hirk_id,
-                    len(page.items), len(normalized),
+                    "ingest asset=%s page=%d fetched=%d normalized=%d geocoded=%d "
+                    "inserted=%d updated=%d",
+                    asset.value, page.page_no, len(page.items), len(normalized),
                     stats.geocoded, ins, upd,
                 )
         return stats

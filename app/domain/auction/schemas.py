@@ -1,21 +1,36 @@
+"""Pydantic 모델 — 차세대 온비드(B010003) v2 스키마 기준.
+
+DB(`auctions` + 3 detail) 와 1:1로 매핑되는 도메인/응답/적재 모델을 정의한다.
+"""
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Field, model_validator
 
 
+# =====================================================================
+# Enums (DB enum과 동일 식별자)
+# =====================================================================
 class AuctionSource(str, Enum):
-    COURT = "court"   # 법원 경매
-    ONBID = "onbid"   # 캠코 온비드 (공매)
+    ONBID = "onbid"
+    COURT = "court"
+
+
+class AssetType(str, Enum):
+    REALTY = "realty"
+    MOVABLE = "movable"
+    VEHICLE = "vehicle"
 
 
 class AuctionStatus(str, Enum):
-    SCHEDULED = "scheduled"   # 신건/예정
-    ONGOING = "ongoing"       # 진행중
-    SOLD = "sold"             # 매각/낙찰
-    FAILED = "failed"         # 유찰
-    CANCELLED = "cancelled"   # 취하/변경
+    SCHEDULED = "scheduled"
+    ONGOING = "ongoing"
+    SOLD = "sold"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class PropertyCategory(str, Enum):
@@ -28,6 +43,25 @@ class PropertyCategory(str, Enum):
     ETC = "etc"
 
 
+class VehicleCategory(str, Enum):
+    SEDAN = "sedan"
+    VAN = "van"
+    TRUCK = "truck"
+    BUS = "bus"
+    MOTORCYCLE = "motorcycle"
+    SPECIAL = "special"
+    ETC = "etc"
+
+
+# =====================================================================
+# 표시 라벨 (한국어)
+# =====================================================================
+ASSET_TYPE_LABELS_KO: dict[AssetType, str] = {
+    AssetType.REALTY: "부동산",
+    AssetType.MOVABLE: "동산",
+    AssetType.VEHICLE: "차량",
+}
+
 PROPERTY_CATEGORY_LABELS_KO: dict[PropertyCategory, str] = {
     PropertyCategory.APARTMENT: "아파트",
     PropertyCategory.VILLA: "빌라/연립",
@@ -38,14 +72,31 @@ PROPERTY_CATEGORY_LABELS_KO: dict[PropertyCategory, str] = {
     PropertyCategory.ETC: "기타",
 }
 
+VEHICLE_CATEGORY_LABELS_KO: dict[VehicleCategory, str] = {
+    VehicleCategory.SEDAN: "승용",
+    VehicleCategory.VAN: "승합",
+    VehicleCategory.TRUCK: "화물",
+    VehicleCategory.BUS: "버스",
+    VehicleCategory.MOTORCYCLE: "이륜",
+    VehicleCategory.SPECIAL: "특수",
+    VehicleCategory.ETC: "기타",
+}
 
-# ---------------------------------------------------------------------
-# Stats
-# ---------------------------------------------------------------------
-class CategoryStat(BaseModel):
-    key: PropertyCategory
-    label: str = Field(description="한국어 표시명")
-    count: int = Field(ge=0, description="해당 카테고리의 진행 중인 매물 수")
+
+# =====================================================================
+# Stats response
+# =====================================================================
+class CategorySubStat(BaseModel):
+    key: str = Field(description="property_category 또는 vehicle_category 값")
+    label: str
+    count: int = Field(ge=0)
+
+
+class AssetGroupStat(BaseModel):
+    asset_type: AssetType
+    label: str
+    total: int = Field(ge=0)
+    categories: list[CategorySubStat] = Field(default_factory=list)
 
 
 class SourceStat(BaseModel):
@@ -55,34 +106,89 @@ class SourceStat(BaseModel):
 
 class AuctionStatsResponse(BaseModel):
     total: int = Field(description="진행 중인 전체 매물 수")
-    categories: list[CategoryStat]
+    groups: list[AssetGroupStat]
     by_source: list[SourceStat]
 
 
-# ---------------------------------------------------------------------
-# Map / List / Detail
-# ---------------------------------------------------------------------
+# =====================================================================
+# Map / List
+# =====================================================================
 class AuctionListItem(BaseModel):
-    """지도 마커용 경량 페이로드."""
+    """지도 마커 / 리스트 카드용 경량 페이로드."""
     id: int
     source: AuctionSource
-    category: PropertyCategory
+    asset_type: AssetType
     status: AuctionStatus
     title: str | None = None
-    address: str
-    lat: float
-    lng: float
-    minimum_bid_price: int | None = None
+    address: str | None = None
+    region_sido: str | None = None
+    region_sigungu: str | None = None
+    lat: float | None = None
+    lng: float | None = None
     appraisal_price: int | None = None
-    auction_date: datetime | None = None
+    min_bid_price: int | None = None
+    bid_end_at: datetime | None = None
+    fee_rate: float | None = None
+    failed_count: int = 0
+    thumbnail_url: str | None = None
 
 
 class AuctionListResponse(BaseModel):
     items: list[AuctionListItem]
     truncated: bool = Field(
         default=False,
-        description="True면 limit에 의해 잘렸다는 뜻 — 클라이언트가 줌인 유도",
+        description="True면 limit에 의해 잘림 — 클라이언트가 줌인 유도",
     )
+
+
+# =====================================================================
+# Detail (asset_type별 polymorphic `details` 블록)
+# =====================================================================
+class RealtyDetails(BaseModel):
+    asset_type: Literal["realty"] = "realty"
+    property_category: PropertyCategory = PropertyCategory.ETC
+    land_sqms: float | None = None
+    bld_sqms: float | None = None
+    alc_yn: bool | None = None
+
+
+class VehicleDetails(BaseModel):
+    asset_type: Literal["vehicle"] = "vehicle"
+    vehicle_category: VehicleCategory = VehicleCategory.ETC
+    maker: str | None = None
+    vehicle_kind: str | None = None
+    model_name: str | None = None
+    year_model: str | None = None
+    plate_no: str | None = None
+    mileage_km: int | None = None
+    displacement_cc: int | None = None
+    transmission: str | None = None
+    fuel: str | None = None
+    color: str | None = None
+    quantity_text: str | None = None
+
+
+class MovableDetails(BaseModel):
+    asset_type: Literal["movable"] = "movable"
+    maker: str | None = None
+    model_name: str | None = None
+    manufacture_year: str | None = None
+    quantity_text: str | None = None
+    production_place: str | None = None
+    use_period_year: float | None = None
+    size_text: str | None = None
+    weight_text: str | None = None
+    custody_place: str | None = None
+    author_name: str | None = None
+    membership_name: str | None = None
+    commodity_name: str | None = None
+    product_name: str | None = None
+
+
+AssetDetails = Annotated[
+    Union[RealtyDetails, VehicleDetails, MovableDetails],
+    Field(discriminator="asset_type"),
+]
 
 
 class RightsAnalysisSummary(BaseModel):
@@ -94,72 +200,246 @@ class RightsAnalysisSummary(BaseModel):
 class AuctionDetail(BaseModel):
     id: int
     source: AuctionSource
-    external_id: str
-    case_number: str | None = None
-    category: PropertyCategory
+    asset_type: AssetType
     status: AuctionStatus
     title: str | None = None
-    address: str
-    address_detail: str | None = None
+
+    # 식별자
+    cltr_mng_no: str | None = None
+    pbct_cdtn_no: int | None = None
+    onbid_cltr_no: int | None = None
+    onbid_pbanc_no: int | None = None
+    pbct_no: int | None = None
+    case_number: str | None = None
+    court_name: str | None = None
+
+    # 주소
+    address: str | None = None
     region_sido: str | None = None
     region_sigungu: str | None = None
+    region_emd: str | None = None
     lat: float | None = None
     lng: float | None = None
+
+    # 가격
     appraisal_price: int | None = None
-    minimum_bid_price: int | None = None
-    bid_deposit: int | None = None
-    auction_date: datetime | None = None
+    min_bid_price: int | None = None
+    min_bid_price_text: str | None = None
+    first_bid_price: int | None = None
+    apsl_lowst_ratio: float | None = None
+    frst_lowst_ratio: float | None = None
+    fee_rate: float | None = None
+
+    # 일정
+    bid_begin_at: datetime | None = None
+    bid_end_at: datetime | None = None
     failed_count: int = 0
-    court_name: str | None = None
-    agency_name: str | None = None
-    description: str | None = None
+    progress_count: int = 0
+    pvct_trgt_yn: bool | None = None
+
+    # 코드 표시명 (코드도 노출하고 싶으면 Detail 따로 붙이세요)
+    pbct_stat_nm: str | None = None
+    prpt_div_nm: str | None = None
+    dsps_mthod_nm: str | None = None
+    bid_div_nm: str | None = None
+    bid_mthod_nm: str | None = None
+    cptn_mthod_nm: str | None = None
+    totalamt_unpc_div_nm: str | None = None
+
+    # 용도
+    usg_lcls_nm: str | None = None
+    usg_mcls_nm: str | None = None
+    usg_scls_nm: str | None = None
+
+    # 입찰 옵션
+    elec_grpr_use_yn: bool | None = None
+    collb_bid_psbl_yn: bool | None = None
+    twtm_gthr_bid_psbl_yn: bool | None = None
+    subt_bid_psbl_yn: bool | None = None
+
+    # 기관
+    request_org_nm: str | None = None
+    announce_org_nm: str | None = None
+
+    # 이미지
+    thumbnail_url: str | None = None
+    image_urls: list[str] = Field(default_factory=list)
+
+    # 기타
+    evc_rsby_target: str | None = None
+
+    # 카테고리별 디테일
+    details: AssetDetails | None = None
+
+    # 권리분석
     rights_analysis: RightsAnalysisSummary | None = None
 
 
-# ---------------------------------------------------------------------
-# Ingest pipeline DTO (외부 API → DB 적재용 정규화 모델)
-# ---------------------------------------------------------------------
+# =====================================================================
+# Ingest payload (외부 API → 정규화 → DB upsert)
+# =====================================================================
+class RealtyAttrs(BaseModel):
+    property_category: PropertyCategory = PropertyCategory.ETC
+    land_sqms: float | None = None
+    bld_sqms: float | None = None
+    alc_yn: bool | None = None
+    extras: dict[str, Any] = Field(default_factory=dict)
+
+
+class VehicleAttrs(BaseModel):
+    vehicle_category: VehicleCategory = VehicleCategory.ETC
+    maker: str | None = None
+    vehicle_kind: str | None = None
+    model_name: str | None = None
+    year_model: str | None = None
+    plate_no: str | None = None
+    mileage_km: int | None = None
+    displacement_cc: int | None = None
+    transmission: str | None = None
+    fuel: str | None = None
+    color: str | None = None
+    quantity_text: str | None = None
+    extras: dict[str, Any] = Field(default_factory=dict)
+
+
+class MovableAttrs(BaseModel):
+    maker: str | None = None
+    model_name: str | None = None
+    manufacture_year: str | None = None
+    quantity_text: str | None = None
+    production_place: str | None = None
+    use_period_year: float | None = None
+    size_text: str | None = None
+    weight_text: str | None = None
+    custody_place: str | None = None
+    author_name: str | None = None
+    membership_name: str | None = None
+    membership_section_text: str | None = None
+    commodity_name: str | None = None
+    property_name: str | None = None
+    product_name: str | None = None
+    supplier_item_name: str | None = None
+    extras: dict[str, Any] = Field(default_factory=dict)
+
+
 class AuctionUpsertItem(BaseModel):
-    source: AuctionSource
-    external_id: str
-    category: PropertyCategory
+    """온비드 응답 → DB upsert 정규화 모델."""
+    source: AuctionSource = AuctionSource.ONBID
+    asset_type: AssetType
     status: AuctionStatus = AuctionStatus.SCHEDULED
+
+    # onbid 식별자 (필수)
+    cltr_mng_no: str
+    pbct_cdtn_no: int
+    onbid_cltr_no: int | None = None
+    onbid_pbanc_no: int | None = None
+    pbct_no: int | None = None
+    pbct_nsq: str | None = None
+    pbct_sn: str | None = None
+
+    # court (선택 — 향후 법원 경매)
     case_number: str | None = None
+    court_name: str | None = None
+
     title: str | None = None
-    address: str
-    address_detail: str | None = None
+
+    # 코드 + 명
+    pbct_stat_cd: str | None = None
+    pbct_stat_nm: str | None = None
+    prpt_div_cd: str | None = None
+    prpt_div_nm: str | None = None
+    dsps_mthod_cd: str | None = None
+    dsps_mthod_nm: str | None = None
+    bid_div_cd: str | None = None
+    bid_div_nm: str | None = None
+    bid_mthod_cd: str | None = None
+    bid_mthod_nm: str | None = None
+    cptn_mthod_cd: str | None = None
+    cptn_mthod_nm: str | None = None
+    totalamt_unpc_div_cd: str | None = None
+    totalamt_unpc_div_nm: str | None = None
+
+    # 용도
+    usg_lcls_id: str | None = None
+    usg_lcls_nm: str | None = None
+    usg_mcls_id: str | None = None
+    usg_mcls_nm: str | None = None
+    usg_scls_id: str | None = None
+    usg_scls_nm: str | None = None
+
+    # 주소
+    ltno_pnu: str | None = None
+    rdnm_pnu: str | None = None
     region_sido: str | None = None
     region_sigungu: str | None = None
+    region_emd: str | None = None
+    address: str | None = None
     lat: float | None = None
     lng: float | None = None
+
+    # 가격
     appraisal_price: int | None = None
-    minimum_bid_price: int | None = None
-    bid_deposit: int | None = None
-    auction_date: datetime | None = None
+    min_bid_price: int | None = None
+    min_bid_price_text: str | None = None
+    first_bid_price: int | None = None
+    apsl_lowst_ratio: float | None = None
+    frst_lowst_ratio: float | None = None
+    fee_rate: float | None = None
+
+    # 일정 / 진행
+    bid_begin_at: datetime | None = None
+    bid_end_at: datetime | None = None
     failed_count: int = 0
-    court_name: str | None = None
-    agency_name: str | None = None
-    description: str | None = None
-    raw: dict[str, Any] = Field(
-        default_factory=dict,
-        description="원본 응답 — auctions.metadata JSONB로 저장",
-    )
+    progress_count: int = 0
+    pvct_trgt_yn: bool | None = None
+    batc_bid_yn: bool | None = None
+
+    # 입찰 옵션
+    elec_grpr_use_yn: bool | None = None
+    collb_bid_psbl_yn: bool | None = None
+    twtm_gthr_bid_psbl_yn: bool | None = None
+    subt_bid_psbl_yn: bool | None = None
+
+    # 기관
+    request_org_nm: str | None = None
+    announce_org_nm: str | None = None
+
+    # 임대
+    rent_method_nm: str | None = None
+    rent_period_text: str | None = None
+
+    # 기타
+    evc_rsby_target: str | None = None
+    dtbt_rqr_edtm: str | None = None
+    thumbnail_url: str | None = None
+    image_urls: list[str] = Field(default_factory=list)
+    correction_yn: bool = False
+    modified_at: datetime | None = None
+
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+    # asset-specific (asset_type에 맞는 1개만 채움)
+    realty: RealtyAttrs | None = None
+    vehicle: VehicleAttrs | None = None
+    movable: MovableAttrs | None = None
 
 
-# ---------------------------------------------------------------------
+# =====================================================================
 # Query params
-# ---------------------------------------------------------------------
+# =====================================================================
 class BBoxQuery(BaseModel):
     min_lng: float = Field(ge=-180, le=180)
     min_lat: float = Field(ge=-90, le=90)
     max_lng: float = Field(ge=-180, le=180)
     max_lat: float = Field(ge=-90, le=90)
-    category: PropertyCategory | None = None
+    asset_type: AssetType | None = None
+    property_category: PropertyCategory | None = None
+    vehicle_category: VehicleCategory | None = None
     status: AuctionStatus | None = None
     limit: int = Field(default=200, ge=1, le=500)
 
     @model_validator(mode="after")
-    def _check_bounds(self) -> "BBoxQuery":
+    def _bounds(self) -> "BBoxQuery":
         if self.min_lng >= self.max_lng:
             raise ValueError("min_lng must be < max_lng")
         if self.min_lat >= self.max_lat:

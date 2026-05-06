@@ -33,11 +33,11 @@ async def _run_daily_onbid_ingest() -> None:
 
     repo = get_auction_repository()
     client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
-    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_LOCAL_REST_API_KEY)
+    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
     service = OnbidIngestService(client=client, geocoder=geocoder, repo=repo)
 
     logger.info("Daily Onbid ingest start.")
-    stats = await service.run_full(max_pages_per_category=20, num_of_rows=200)
+    stats = await service.run_full(max_pages_per_asset=20, num_of_rows=200)
     logger.info(
         "Daily Onbid ingest done — pages=%d fetched=%d normalized=%d "
         "geocoded=%d inserted=%d updated=%d",

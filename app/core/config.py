@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     ONBID_SERVICE_KEY: str = ""
 
     # CORS
+    # 정확한 매칭이 필요한 origin 들 — 콤마 구분
     CORS_ORIGINS: str = "http://localhost:3000"
+    # hash 기반 동적 origin (예: Vercel preview) 매칭용 정규식.
+    # 비어있으면 무시. 예: r"^https://auction-bridge.*\.vercel\.app$"
+    CORS_ORIGIN_REGEX: str = ""
 
     # Daily ingest 작업 파라미터 (외부 cron이 트리거)
     SCHEDULER_PAGES_PER_ASSET: int = 20      # 자산타입별 페이지 수

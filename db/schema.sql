@@ -306,6 +306,48 @@ CREATE TRIGGER trg_movable_details_updated_at BEFORE UPDATE ON auction_movable_d
 
 
 -- ---------------------------------------------------------------------
+-- AUCTION_BID_RESULTS  (입찰 결과 — auction_id에 1:1)
+-- ---------------------------------------------------------------------
+CREATE TABLE auction_bid_results (
+    id                      BIGSERIAL PRIMARY KEY,
+    auction_id              BIGINT      NOT NULL UNIQUE
+                            REFERENCES auctions(id) ON DELETE CASCADE,
+    cltr_mng_no             VARCHAR(100) NOT NULL,
+    pbct_cdtn_no            BIGINT       NOT NULL,
+    pbct_nsq                VARCHAR(3),
+    pbct_sn                 VARCHAR(5),
+    status                  auction_status NOT NULL,
+    pbct_stat_cd            VARCHAR(4),
+    pbct_stat_nm            VARCHAR(100),
+    winning_bid_amount      BIGINT,
+    winning_bid_amounts     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    bid_amounts             JSONB NOT NULL DEFAULT '[]'::jsonb,
+    apsl_scfb_ratio         NUMERIC(12,6),
+    lowst_scfb_ratio        NUMERIC(12,6),
+    valid_bidder_count      INTEGER,
+    invalid_bidder_count    INTEGER,
+    opbd_at                 TIMESTAMPTZ,
+    opbd_begin_at           TIMESTAMPTZ,
+    opbd_end_at             TIMESTAMPTZ,
+    afsb_rtrcn_reason       TEXT,
+    rtrcn_reason            TEXT,
+    announce_name           VARCHAR(2000),
+    announce_mng_no         VARCHAR(40),
+    bid_deposit_text        VARCHAR(400),
+    raw                     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    crawled_at              TIMESTAMPTZ,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+DROP TRIGGER IF EXISTS trg_bid_results_updated_at ON auction_bid_results;
+CREATE TRIGGER trg_bid_results_updated_at BEFORE UPDATE ON auction_bid_results
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+CREATE INDEX IF NOT EXISTS idx_bid_results_status   ON auction_bid_results (status);
+CREATE INDEX IF NOT EXISTS idx_bid_results_opbd_at  ON auction_bid_results (opbd_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bid_results_cltr_mng ON auction_bid_results (cltr_mng_no, pbct_cdtn_no);
+
+
+-- ---------------------------------------------------------------------
 -- AUCTION_RIGHTS_ANALYSIS  (권리분석 — auction_id에 1:1)
 -- ---------------------------------------------------------------------
 CREATE TABLE auction_rights_analysis (

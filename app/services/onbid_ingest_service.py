@@ -51,8 +51,12 @@ def map_status(code: str | None, name: str | None) -> AuctionStatus:
         if c in ("0002", "0006", "0003"):
             # 0003 입찰마감 — 결과는 입찰결과 API로 보강 전까지 ONGOING로 둔다
             return AuctionStatus.ONGOING
+        if c == "0010":
+            return AuctionStatus.SOLD
         if c == "0011":
             return AuctionStatus.FAILED
+        if c in ("0012", "0014"):
+            return AuctionStatus.CANCELLED
     blob = (name or "").strip()
     if any(k in blob for k in ("낙찰", "매각결정", "성공")):
         return AuctionStatus.SOLD
@@ -395,6 +399,83 @@ class EnrichStats:
     failed: int = 0
 
 
+@dataclass(slots=True)
+class BidResultPayload:
+    """auction_bid_results upsert에 쓰일 정규화 결과."""
+    cltr_mng_no: str
+    pbct_cdtn_no: int
+    pbct_nsq: str | None
+    pbct_sn: str | None
+    status: AuctionStatus
+    pbct_stat_cd: str | None
+    pbct_stat_nm: str | None
+    winning_bid_amount: int | None
+    winning_bid_amounts: list[int]
+    bid_amounts: list[int]
+    apsl_scfb_ratio: float | None
+    lowst_scfb_ratio: float | None
+    valid_bidder_count: int | None
+    invalid_bidder_count: int | None
+    opbd_at: datetime | None
+    opbd_begin_at: datetime | None
+    opbd_end_at: datetime | None
+    afsb_rtrcn_reason: str | None
+    rtrcn_reason: str | None
+    announce_name: str | None
+    announce_mng_no: str | None
+    bid_deposit_text: str | None
+    raw: dict[str, Any]
+
+
+def _split_amounts(s: Any) -> list[int]:
+    """`scfbAmt` / `bidAmtClgCont`는 복수 값일 때 `|`로 연결됨."""
+    if s is None:
+        return []
+    text = str(s).strip()
+    if not text:
+        return []
+    out: list[int] = []
+    for token in text.split("|"):
+        n = parse_int(token)
+        if n is not None:
+            out.append(n)
+    return out
+
+
+def normalize_bid_result(raw: dict[str, Any]) -> BidResultPayload | None:
+    cltr = (raw.get("cltrMngNo") or "").strip()
+    pbct = parse_int(raw.get("pbctCdtnNo"))
+    if not cltr or pbct is None:
+        return None
+    winning_amounts = _split_amounts(raw.get("scfbAmt"))
+    bid_amounts = _split_amounts(raw.get("bidAmtClgCont"))
+    return BidResultPayload(
+        cltr_mng_no=cltr,
+        pbct_cdtn_no=pbct,
+        pbct_nsq=(raw.get("pbctNsq") or None),
+        pbct_sn=(raw.get("pbctsn") or None),
+        status=map_status(raw.get("pbctStatCd"), raw.get("pbctStatNm")),
+        pbct_stat_cd=(raw.get("pbctStatCd") or None),
+        pbct_stat_nm=(raw.get("pbctStatNm") or None),
+        winning_bid_amount=winning_amounts[0] if winning_amounts else None,
+        winning_bid_amounts=winning_amounts,
+        bid_amounts=bid_amounts,
+        apsl_scfb_ratio=parse_float(raw.get("apslPrcCtrsScfbPrcRto")),
+        lowst_scfb_ratio=parse_float(raw.get("lowstBidCtrsScfbPrcRto")),
+        valid_bidder_count=parse_int(raw.get("vldBddrNope")),
+        invalid_bidder_count=parse_int(raw.get("nfctBddrNope")),
+        opbd_at=parse_dt(raw.get("cltrOpbdDt")),
+        opbd_begin_at=parse_dt(raw.get("opbdBgngDt")),
+        opbd_end_at=parse_dt(raw.get("opbdCmptnDt")),
+        afsb_rtrcn_reason=(raw.get("afsbRtrcnRsnCont") or None),
+        rtrcn_reason=(raw.get("rtrcnRsnCont") or None),
+        announce_name=(raw.get("onbidPbancNm") or None),
+        announce_mng_no=(raw.get("pbancMngNo") or None),
+        bid_deposit_text=(raw.get("pbctTdpsCont") or None),
+        raw=raw,
+    )
+
+
 class OnbidIngestService:
     def __init__(
         self,
@@ -503,6 +584,35 @@ class OnbidIngestService:
                     asset.value, page.page_no, len(page.items), len(normalized),
                     stats.geocoded, ins, upd,
                 )
+        return stats
+
+    async def enrich_bid_results(self, *, limit: int = 50) -> EnrichStats:
+        """bid_end_at 지난 ongoing 매물에 대해 입찰결과상세(#9)를 호출해 결과를 적재.
+
+        결과가 SOLD/FAILED/CANCELLED로 확정되면 auctions.status도 갱신.
+        """
+        stats = EnrichStats()
+        targets = await self._repo.list_auctions_pending_results(limit=limit)
+        stats.targeted = len(targets)
+        for auction_id, cltr, pbct in targets:
+            stats.api_calls += 1
+            try:
+                detail = await self._client.get_bid_result_detail(
+                    cltr_mng_no=cltr, pbct_cdtn_no=pbct
+                )
+            except OnbidQuotaExceeded as e:
+                logger.warning("bid_result quota exceeded — stopping: %s", e)
+                break
+            except OnbidAPIError as e:
+                logger.info("bid_result skip auction_id=%d: %s", auction_id, e)
+                stats.failed += 1
+                continue
+            payload = normalize_bid_result(detail) if detail else None
+            if payload is None:
+                stats.failed += 1
+                continue
+            await self._repo.upsert_bid_result(auction_id, payload)
+            stats.enriched += 1
         return stats
 
     async def enrich_realty_image_urls(self, *, limit: int = 50) -> EnrichStats:

@@ -114,3 +114,30 @@ async def enrich_realty_images(
         "enriched": stats.enriched,
         "failed": stats.failed,
     }
+
+
+@router.post(
+    "/enrich/bid-results",
+    summary="만료된 ongoing 매물의 입찰결과를 보강 (status: SOLD/FAILED/CANCELLED 확정)",
+)
+async def enrich_bid_results(
+    limit: int = Query(default=50, ge=1, le=500),
+    repo: AuctionRepository = Depends(get_auction_repository),
+) -> dict:
+    settings = get_settings()
+    if not settings.ONBID_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ONBID_SERVICE_KEY is not configured.",
+        )
+    client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
+    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
+    service = OnbidIngestService(client=client, geocoder=geocoder, repo=repo)
+    stats = await service.enrich_bid_results(limit=limit)
+    return {
+        "limit": limit,
+        "targeted": stats.targeted,
+        "api_calls": stats.api_calls,
+        "enriched": stats.enriched,
+        "failed": stats.failed,
+    }

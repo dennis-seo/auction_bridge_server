@@ -31,6 +31,7 @@ from app.domain.auction.schemas import (
     VehicleDetails,
 )
 from app.infrastructure.db.models import (
+    AuctionBidResultORM,
     AuctionMovableDetailsORM,
     AuctionORM,
     AuctionRealtyDetailsORM,
@@ -507,6 +508,86 @@ class DBAuctionRepository(AuctionRepository):
                 .where(AuctionORM.id == auction_id)
                 .values(image_urls=image_urls)
             )
+            await session.commit()
+
+    # ---------- bid result enrichment ----------
+    async def list_auctions_pending_results(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        """bid_end_at < now() 이고 status가 ongoing인 매물 — 결과 보강 대상."""
+        from sqlalchemy import outerjoin
+        async with self._session_factory() as session:
+            rows = (await session.execute(
+                select(AuctionORM.id, AuctionORM.cltr_mng_no, AuctionORM.pbct_cdtn_no)
+                .outerjoin(
+                    AuctionBidResultORM,
+                    AuctionBidResultORM.auction_id == AuctionORM.id,
+                )
+                .where(
+                    AuctionORM.cltr_mng_no.is_not(None),
+                    AuctionORM.pbct_cdtn_no.is_not(None),
+                    AuctionORM.status == AuctionStatus.ONGOING.value,
+                    AuctionORM.bid_end_at.is_not(None),
+                    AuctionORM.bid_end_at < func.now(),
+                    AuctionBidResultORM.id.is_(None),
+                )
+                .order_by(AuctionORM.bid_end_at.asc())
+                .limit(limit)
+            )).all()
+        return [(r.id, r.cltr_mng_no, r.pbct_cdtn_no) for r in rows]
+
+    async def upsert_bid_result(self, auction_id: int, payload) -> None:
+        row = {
+            "auction_id": auction_id,
+            "cltr_mng_no": payload.cltr_mng_no,
+            "pbct_cdtn_no": payload.pbct_cdtn_no,
+            "pbct_nsq": payload.pbct_nsq,
+            "pbct_sn": payload.pbct_sn,
+            "status": payload.status.value,
+            "pbct_stat_cd": payload.pbct_stat_cd,
+            "pbct_stat_nm": payload.pbct_stat_nm,
+            "winning_bid_amount": payload.winning_bid_amount,
+            "winning_bid_amounts": payload.winning_bid_amounts,
+            "bid_amounts": payload.bid_amounts,
+            "apsl_scfb_ratio": payload.apsl_scfb_ratio,
+            "lowst_scfb_ratio": payload.lowst_scfb_ratio,
+            "valid_bidder_count": payload.valid_bidder_count,
+            "invalid_bidder_count": payload.invalid_bidder_count,
+            "opbd_at": payload.opbd_at,
+            "opbd_begin_at": payload.opbd_begin_at,
+            "opbd_end_at": payload.opbd_end_at,
+            "afsb_rtrcn_reason": payload.afsb_rtrcn_reason,
+            "rtrcn_reason": payload.rtrcn_reason,
+            "announce_name": payload.announce_name,
+            "announce_mng_no": payload.announce_mng_no,
+            "bid_deposit_text": payload.bid_deposit_text,
+            "raw": payload.raw,
+            "crawled_at": func.now(),
+        }
+        async with self._session_factory() as session:
+            stmt = pg_insert(AuctionBidResultORM).values(row)
+            update_cols = {
+                c.name: stmt.excluded[c.name]
+                for c in AuctionBidResultORM.__table__.columns
+                if c.name not in ("id", "auction_id", "created_at")
+            }
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["auction_id"], set_=update_cols
+            )
+            await session.execute(stmt)
+            # 결과가 확정 상태면 auctions.status도 갱신
+            if payload.status in (
+                AuctionStatus.SOLD, AuctionStatus.FAILED, AuctionStatus.CANCELLED,
+            ):
+                await session.execute(
+                    update(AuctionORM)
+                    .where(AuctionORM.id == auction_id)
+                    .values(
+                        status=payload.status.value,
+                        pbct_stat_cd=payload.pbct_stat_cd,
+                        pbct_stat_nm=payload.pbct_stat_nm,
+                    )
+                )
             await session.commit()
 
     @staticmethod

@@ -179,6 +179,44 @@ class OnbidClient:
         }
         return await self._request_single(url, params)
 
+    # ---------- 입찰결과 ----------
+    async def list_bid_results(
+        self,
+        *,
+        cltr_type_cd: str,
+        prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
+        opbd_dt_start: str,
+        opbd_dt_end: str,
+        page_no: int = 1,
+        num_of_rows: int = 100,
+    ) -> OnbidPage:
+        """물건 입찰결과 목록 (#8) — 개찰일자 범위 + 물건유형 + 재산유형 필수."""
+        url = f"{self._base_url}/OnbidCltrBidRsltListSrvc2/getCltrBidRsltList2"
+        params = {
+            "serviceKey": self._service_key,
+            "resultType": "json",
+            "pageNo": page_no,
+            "numOfRows": num_of_rows,
+            "cltrTypeCd": cltr_type_cd,
+            "prptDivCd": _join_codes(prpt_div_cd),
+            "opbdDtStart": opbd_dt_start,
+            "opbdDtEnd": opbd_dt_end,
+        }
+        return await self._request_list(url, params, page_no=page_no, num_of_rows=num_of_rows)
+
+    async def get_bid_result_detail(
+        self, *, cltr_mng_no: str, pbct_cdtn_no: int | str
+    ) -> dict[str, Any]:
+        """물건 입찰결과 상세 (#9)."""
+        url = f"{self._base_url}/OnbidCltrBidRsltDtlSrvc2/getCltrBidRsltDtl2"
+        params = {
+            "serviceKey": self._service_key,
+            "resultType": "json",
+            "cltrMngNo": cltr_mng_no,
+            "pbctCdtnNo": str(pbct_cdtn_no),
+        }
+        return await self._request_single(url, params)
+
     # ---------- internals ----------
     async def _request_list(
         self, url: str, params: dict[str, Any], *, page_no: int, num_of_rows: int

@@ -261,6 +261,62 @@ class AuctionMovableDetailsORM(Base):
     auction: Mapped[AuctionORM] = relationship(back_populates="movable")
 
 
+class AuctionBidResultORM(Base):
+    __tablename__ = "auction_bid_results"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    auction_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("auctions.id", ondelete="CASCADE"),
+        nullable=False, unique=True,
+    )
+    cltr_mng_no: Mapped[str] = mapped_column(String(100), nullable=False)
+    pbct_cdtn_no: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    pbct_nsq: Mapped[str | None] = mapped_column(String(3))
+    pbct_sn: Mapped[str | None] = mapped_column(String(5))
+
+    status: Mapped[AuctionStatus] = mapped_column(
+        _pg_enum(AuctionStatus, "auction_status"), nullable=False
+    )
+    pbct_stat_cd: Mapped[str | None] = mapped_column(String(4))
+    pbct_stat_nm: Mapped[str | None] = mapped_column(String(100))
+
+    winning_bid_amount: Mapped[int | None] = mapped_column(BigInteger)
+    winning_bid_amounts: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
+    bid_amounts: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
+    apsl_scfb_ratio: Mapped[float | None] = mapped_column(Numeric(12, 6))
+    lowst_scfb_ratio: Mapped[float | None] = mapped_column(Numeric(12, 6))
+
+    valid_bidder_count: Mapped[int | None] = mapped_column(Integer)
+    invalid_bidder_count: Mapped[int | None] = mapped_column(Integer)
+
+    opbd_at: Mapped[Any] = mapped_column(DateTime(timezone=True))
+    opbd_begin_at: Mapped[Any] = mapped_column(DateTime(timezone=True))
+    opbd_end_at: Mapped[Any] = mapped_column(DateTime(timezone=True))
+
+    afsb_rtrcn_reason: Mapped[str | None] = mapped_column(Text)
+    rtrcn_reason: Mapped[str | None] = mapped_column(Text)
+
+    announce_name: Mapped[str | None] = mapped_column(String(2000))
+    announce_mng_no: Mapped[str | None] = mapped_column(String(40))
+    bid_deposit_text: Mapped[str | None] = mapped_column(String(400))
+
+    raw: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    crawled_at: Mapped[Any] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[Any] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class AuctionRightsAnalysisORM(Base):
     __tablename__ = "auction_rights_analysis"
 

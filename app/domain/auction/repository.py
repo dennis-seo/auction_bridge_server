@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from app.domain.auction.schemas import (
     AssetType,
@@ -10,6 +13,9 @@ from app.domain.auction.schemas import (
     PropertyCategory,
     VehicleCategory,
 )
+
+if TYPE_CHECKING:
+    from app.services.onbid_ingest_service import BidResultPayload
 
 
 class AuctionRepository(ABC):
@@ -56,4 +62,21 @@ class AuctionRepository(ABC):
     async def update_image_urls(
         self, auction_id: int, image_urls: list[str]
     ) -> None:
+        ...
+
+    @abstractmethod
+    async def list_auctions_pending_results(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        """결과 미확정 ongoing 매물 N건 — bid_end_at 지난 것부터.
+
+        Returns: list of (auction_id, cltr_mng_no, pbct_cdtn_no).
+        """
+        ...
+
+    @abstractmethod
+    async def upsert_bid_result(
+        self, auction_id: int, payload: "BidResultPayload"
+    ) -> None:
+        """auction_bid_results upsert + auctions.status를 결과에 맞춰 갱신."""
         ...

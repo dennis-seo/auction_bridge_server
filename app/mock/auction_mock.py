@@ -246,3 +246,11 @@ class MockAuctionRepository(AuctionRepository):
         self, auction_id: int, image_urls: list[str]
     ) -> None:
         return None
+
+    async def list_auctions_pending_results(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        return []
+
+    async def upsert_bid_result(self, auction_id: int, payload) -> None:
+        return None

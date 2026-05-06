@@ -82,7 +82,11 @@ jobs:
         run: |
           IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${GITHUB_SHA::12}"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          # Regional 빌드 + user-owned 로그 버킷
+          # → 기본 Google-owned 버킷 권한 이슈 회피, 로그 스트리밍 가능
           gcloud builds submit \
+            --region="$REGION" \
+            --default-buckets-behavior=REGIONAL_USER_OWNED_BUCKET \
             --tag "$IMAGE" \
             --project "$PROJECT_ID" \
             .

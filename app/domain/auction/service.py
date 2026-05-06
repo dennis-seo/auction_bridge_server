@@ -1,12 +1,9 @@
 from app.domain.auction.repository import AuctionRepository
 from app.domain.auction.schemas import (
     AuctionDetail,
-    AuctionListItem,
     AuctionListResponse,
     AuctionStatsResponse,
-    AuctionStatus,
     BBoxQuery,
-    PropertyCategory,
 )
 
 
@@ -23,7 +20,9 @@ class AuctionService:
             min_lat=q.min_lat,
             max_lng=q.max_lng,
             max_lat=q.max_lat,
-            category=q.category,
+            asset_type=q.asset_type,
+            property_category=q.property_category,
+            vehicle_category=q.vehicle_category,
             status=q.status,
             limit=q.limit,
         )

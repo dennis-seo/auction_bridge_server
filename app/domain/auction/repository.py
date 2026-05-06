@@ -1,13 +1,21 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from app.domain.auction.schemas import (
+    AssetType,
     AuctionDetail,
     AuctionListItem,
     AuctionStatsResponse,
     AuctionStatus,
     AuctionUpsertItem,
     PropertyCategory,
+    VehicleCategory,
 )
+
+if TYPE_CHECKING:
+    from app.services.onbid_ingest_service import BidResultPayload
 
 
 class AuctionRepository(ABC):
@@ -24,7 +32,9 @@ class AuctionRepository(ABC):
         min_lat: float,
         max_lng: float,
         max_lat: float,
-        category: PropertyCategory | None = None,
+        asset_type: AssetType | None = None,
+        property_category: PropertyCategory | None = None,
+        vehicle_category: VehicleCategory | None = None,
         status: AuctionStatus | None = None,
         limit: int = 200,
     ) -> list[AuctionListItem]:
@@ -39,4 +49,34 @@ class AuctionRepository(ABC):
         self, items: list[AuctionUpsertItem]
     ) -> tuple[int, int]:
         """Returns (inserted_count, updated_count)."""
+        ...
+
+    @abstractmethod
+    async def list_realty_missing_images(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        """이미지 미보강 부동산 N건 반환 — (auction_id, cltr_mng_no, pbct_cdtn_no)."""
+        ...
+
+    @abstractmethod
+    async def update_image_urls(
+        self, auction_id: int, image_urls: list[str]
+    ) -> None:
+        ...
+
+    @abstractmethod
+    async def list_auctions_pending_results(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        """결과 미확정 ongoing 매물 N건 — bid_end_at 지난 것부터.
+
+        Returns: list of (auction_id, cltr_mng_no, pbct_cdtn_no).
+        """
+        ...
+
+    @abstractmethod
+    async def upsert_bid_result(
+        self, auction_id: int, payload: "BidResultPayload"
+    ) -> None:
+        """auction_bid_results upsert + auctions.status를 결과에 맞춰 갱신."""
         ...

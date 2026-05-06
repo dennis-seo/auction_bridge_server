@@ -86,3 +86,31 @@ async def sync_onbid(
             "by_asset": stats.by_asset,
         },
     }
+
+
+@router.post(
+    "/enrich/realty-images",
+    summary="부동산 상세 API로 image_urls 보강 (일일 쿼터 주의)",
+)
+async def enrich_realty_images(
+    limit: int = Query(default=50, ge=1, le=500),
+    repo: AuctionRepository = Depends(get_auction_repository),
+) -> dict:
+    settings = get_settings()
+    if not settings.ONBID_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ONBID_SERVICE_KEY is not configured.",
+        )
+
+    client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
+    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
+    service = OnbidIngestService(client=client, geocoder=geocoder, repo=repo)
+    stats = await service.enrich_realty_image_urls(limit=limit)
+    return {
+        "limit": limit,
+        "targeted": stats.targeted,
+        "api_calls": stats.api_calls,
+        "enriched": stats.enriched,
+        "failed": stats.failed,
+    }

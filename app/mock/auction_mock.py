@@ -236,3 +236,13 @@ class MockAuctionRepository(AuctionRepository):
         self, items: list[AuctionUpsertItem]
     ) -> tuple[int, int]:
         return (len(items), 0)
+
+    async def list_realty_missing_images(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        return []
+
+    async def update_image_urls(
+        self, auction_id: int, image_urls: list[str]
+    ) -> None:
+        return None

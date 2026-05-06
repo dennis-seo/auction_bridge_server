@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from geoalchemy2.functions import ST_Intersects, ST_MakeEnvelope, ST_X, ST_Y
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -395,6 +395,15 @@ class DBAuctionRepository(AuctionRepository):
                 if c.name not in ("id", "source", "cltr_mng_no", "pbct_cdtn_no", "created_at", "raw")
             }
             update_cols["raw"] = stmt.excluded.raw
+            # 신규 페치는 image_urls가 늘 빈 [] — 별도 enrich로 채워둔 사진을 덮지 않도록
+            # 새 값이 비어있을 때만 기존 값을 유지한다.
+            update_cols["image_urls"] = case(
+                (
+                    func.jsonb_array_length(stmt.excluded.image_urls) > 0,
+                    stmt.excluded.image_urls,
+                ),
+                else_=AuctionORM.image_urls,
+            )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["cltr_mng_no", "pbct_cdtn_no"],
                 index_where=AuctionORM.source == AuctionSource.ONBID.value,
@@ -470,6 +479,35 @@ class DBAuctionRepository(AuctionRepository):
         )
         updated = len(items) - inserted
         return (inserted, updated)
+
+    # ---------- image enrichment ----------
+    async def list_realty_missing_images(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        async with self._session_factory() as session:
+            rows = (await session.execute(
+                select(AuctionORM.id, AuctionORM.cltr_mng_no, AuctionORM.pbct_cdtn_no)
+                .where(
+                    AuctionORM.asset_type == AssetType.REALTY.value,
+                    AuctionORM.cltr_mng_no.is_not(None),
+                    AuctionORM.pbct_cdtn_no.is_not(None),
+                    func.jsonb_array_length(AuctionORM.image_urls) == 0,
+                )
+                .order_by(AuctionORM.id)
+                .limit(limit)
+            )).all()
+        return [(r.id, r.cltr_mng_no, r.pbct_cdtn_no) for r in rows]
+
+    async def update_image_urls(
+        self, auction_id: int, image_urls: list[str]
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(AuctionORM)
+                .where(AuctionORM.id == auction_id)
+                .values(image_urls=image_urls)
+            )
+            await session.commit()
 
     @staticmethod
     async def _upsert_details(session: AsyncSession, model, rows: list[dict[str, Any]]) -> None:

@@ -265,6 +265,35 @@ def _normalize_items(items_raw: Any) -> list[dict[str, Any]]:
     return []
 
 
+# 부동산 상세 응답의 사진 URL 추출 (potoUrlList[].urlAdr).
+# 차세대 v2 응답의 `urlAdr` 키를 1순위로 한다.
+_PHOTO_URL_KEYS = ("urlAdr", "potoUrl", "imgUrl", "photoUrl")
+
+
+def extract_image_urls(detail: dict[str, Any]) -> list[str]:
+    """차세대 부동산 상세 응답에서 사진 URL 리스트만 뽑아낸다.
+
+    응답에 `potoUrlList`가 list-of-dict, 단일 dict, 또는 None일 수 있다.
+    """
+    if not isinstance(detail, dict):
+        return []
+    block = detail.get("potoUrlList")
+    if block is None:
+        return []
+    items = block if isinstance(block, list) else [block]
+    urls: list[str] = []
+    for el in items:
+        if isinstance(el, dict):
+            for key in _PHOTO_URL_KEYS:
+                v = el.get(key)
+                if isinstance(v, str) and v.strip():
+                    urls.append(v.strip())
+                    break
+        elif isinstance(el, str) and el.strip():
+            urls.append(el.strip())
+    return urls
+
+
 # ---------- dev script ----------
 async def _main() -> None:
     """python -m app.infrastructure.external.onbid_client 로 sanity test."""

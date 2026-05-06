@@ -44,3 +44,16 @@ class AuctionRepository(ABC):
     ) -> tuple[int, int]:
         """Returns (inserted_count, updated_count)."""
         ...
+
+    @abstractmethod
+    async def list_realty_missing_images(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        """이미지 미보강 부동산 N건 반환 — (auction_id, cltr_mng_no, pbct_cdtn_no)."""
+        ...
+
+    @abstractmethod
+    async def update_image_urls(
+        self, auction_id: int, image_urls: list[str]
+    ) -> None:
+        ...

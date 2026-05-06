@@ -5,6 +5,7 @@ asset_type별로 별도 normalize 함수를 가지며, 결과는 모두 `Auction
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -23,10 +24,12 @@ from app.domain.auction.schemas import (
 )
 from app.infrastructure.external.kakao_geocoder import KakaoGeocoder
 from app.infrastructure.external.onbid_client import (
+    OnbidAPIError,
     OnbidAssetService,
     OnbidClient,
     OnbidQuotaExceeded,
     PrptDivCd,
+    extract_image_urls,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,17 +137,20 @@ def map_vehicle_category(*texts: str | None) -> VehicleCategory:
 # =====================================================================
 # 파서 helpers
 # =====================================================================
+_INT_RE = re.compile(r"-?\d+")
+
+
 def parse_int(v: Any) -> int | None:
     if v is None:
         return None
     s = str(v).strip()
     if not s:
         return None
-    digits = "".join(c for c in s if c.isdigit() or c == "-")
-    if not digits or digits == "-":
+    m = _INT_RE.search(s)
+    if not m:
         return None
     try:
-        return int(digits)
+        return int(m.group(0))
     except ValueError:
         return None
 
@@ -381,6 +387,14 @@ class IngestStats:
     by_asset: dict[str, int] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class EnrichStats:
+    targeted: int = 0
+    api_calls: int = 0
+    enriched: int = 0
+    failed: int = 0
+
+
 class OnbidIngestService:
     def __init__(
         self,
@@ -489,4 +503,31 @@ class OnbidIngestService:
                     asset.value, page.page_no, len(page.items), len(normalized),
                     stats.geocoded, ins, upd,
                 )
+        return stats
+
+    async def enrich_realty_image_urls(self, *, limit: int = 50) -> EnrichStats:
+        """이미지가 비어 있는 부동산 N건에 대해 상세 API를 호출해 image_urls 보강.
+
+        일일 쿼터 1000/서비스 고려해 호출자가 limit 제어. 부분 실패는 카운트만.
+        """
+        stats = EnrichStats()
+        targets = await self._repo.list_realty_missing_images(limit=limit)
+        stats.targeted = len(targets)
+        for auction_id, cltr, pbct in targets:
+            stats.api_calls += 1
+            try:
+                detail = await self._client.get_realty_detail(
+                    cltr_mng_no=cltr, pbct_cdtn_no=pbct
+                )
+            except OnbidQuotaExceeded as e:
+                logger.warning("enrich quota exceeded — stopping: %s", e)
+                break
+            except OnbidAPIError as e:
+                logger.info("enrich skip auction_id=%d: %s", auction_id, e)
+                stats.failed += 1
+                continue
+            urls = extract_image_urls(detail)
+            if urls:
+                await self._repo.update_image_urls(auction_id, urls)
+                stats.enriched += 1
         return stats

@@ -232,6 +232,8 @@ class MockAuctionRepository(AuctionRepository):
             ),
         )
 
+    # ----- AuctionRepository extra methods (no-op for mock) -----
+
     async def upsert_many(
         self, items: list[AuctionUpsertItem]
     ) -> tuple[int, int]:

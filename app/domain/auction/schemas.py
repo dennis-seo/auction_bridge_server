@@ -191,6 +191,28 @@ AssetDetails = Annotated[
 ]
 
 
+class AuctionCodeNames(BaseModel):
+    """온비드 응답의 *코드명* 필드 묶음 — 표시 전용 (카탈로그 그룹)."""
+    pbct_stat: str | None = None        # 입찰결과
+    prpt_div: str | None = None         # 재산유형
+    dsps_mthod: str | None = None       # 처분방식 (매각/임대)
+    bid_div: str | None = None          # 입찰구분 (인터넷/현장)
+    bid_mthod: str | None = None        # 세부입찰방식
+    cptn_mthod: str | None = None       # 입찰방식
+    totalamt_unpc_div: str | None = None  # 총액/단가
+    usg_lcls: str | None = None         # 용도 대분류
+    usg_mcls: str | None = None         # 용도 중분류
+    usg_scls: str | None = None         # 용도 소분류
+
+
+class AuctionBidOptions(BaseModel):
+    """입찰 옵션 Y/N 묶음 — 상세화면 카드 1장으로 처리."""
+    elec_grpr_use: bool | None = None       # 전자보증서 가능
+    collb_bid_psbl: bool | None = None      # 공동입찰 가능
+    twtm_gthr_bid_psbl: bool | None = None  # 2회 이상 입찰 가능
+    subt_bid_psbl: bool | None = None       # 대리입찰 가능
+
+
 class RightsAnalysisSummary(BaseModel):
     summary: str | None = None
     risk_level: int | None = Field(default=None, ge=1, le=3)
@@ -237,25 +259,11 @@ class AuctionDetail(BaseModel):
     progress_count: int = 0
     pvct_trgt_yn: bool | None = None
 
-    # 코드 표시명 (코드도 노출하고 싶으면 Detail 따로 붙이세요)
-    pbct_stat_nm: str | None = None
-    prpt_div_nm: str | None = None
-    dsps_mthod_nm: str | None = None
-    bid_div_nm: str | None = None
-    bid_mthod_nm: str | None = None
-    cptn_mthod_nm: str | None = None
-    totalamt_unpc_div_nm: str | None = None
+    # 코드명 묶음 (입찰결과/재산유형/처분방식/용도 등)
+    code_names: AuctionCodeNames = Field(default_factory=AuctionCodeNames)
 
-    # 용도
-    usg_lcls_nm: str | None = None
-    usg_mcls_nm: str | None = None
-    usg_scls_nm: str | None = None
-
-    # 입찰 옵션
-    elec_grpr_use_yn: bool | None = None
-    collb_bid_psbl_yn: bool | None = None
-    twtm_gthr_bid_psbl_yn: bool | None = None
-    subt_bid_psbl_yn: bool | None = None
+    # 입찰 옵션 Y/N 묶음
+    bid_options: AuctionBidOptions = Field(default_factory=AuctionBidOptions)
 
     # 기관
     request_org_nm: str | None = None

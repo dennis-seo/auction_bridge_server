@@ -59,7 +59,10 @@ async def sync_onbid(
 
     client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
     geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
-    service = OnbidIngestService(client=client, geocoder=geocoder, repo=repo)
+    service = OnbidIngestService(
+        client=client, geocoder=geocoder, repo=repo,
+        geocode_concurrency=settings.GEOCODE_CONCURRENCY,
+    )
 
     stats: IngestStats
     if asset_svc is None:
@@ -105,7 +108,10 @@ async def enrich_realty_images(
 
     client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
     geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
-    service = OnbidIngestService(client=client, geocoder=geocoder, repo=repo)
+    service = OnbidIngestService(
+        client=client, geocoder=geocoder, repo=repo,
+        geocode_concurrency=settings.GEOCODE_CONCURRENCY,
+    )
     stats = await service.enrich_realty_image_urls(limit=limit)
     return {
         "limit": limit,
@@ -132,7 +138,10 @@ async def enrich_bid_results(
         )
     client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
     geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
-    service = OnbidIngestService(client=client, geocoder=geocoder, repo=repo)
+    service = OnbidIngestService(
+        client=client, geocoder=geocoder, repo=repo,
+        geocode_concurrency=settings.GEOCODE_CONCURRENCY,
+    )
     stats = await service.enrich_bid_results(limit=limit)
     return {
         "limit": limit,

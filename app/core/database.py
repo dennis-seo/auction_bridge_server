@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -10,7 +11,21 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-_is_pooler = "pooler.supabase.com" in settings.DATABASE_URL
+
+def _is_supabase_pooler(url: str) -> bool:
+    """Supabase Transaction/Session Pooler 호스트 여부.
+
+    URL parse로 hostname suffix를 정확히 검사 — substring 매칭은 ``foo.pooler.supabase.com.evil.com`` 같은
+    악성 호스트나 path/query에 우연히 들어간 문자열에 오탐할 수 있어 회피.
+    """
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    return host.endswith(".pooler.supabase.com") or host == "pooler.supabase.com"
+
+
+_is_pooler = _is_supabase_pooler(settings.DATABASE_URL)
 _connect_args: dict = {}
 if _is_pooler:
     # Supabase Transaction Pooler는 PREPARE를 캐시 못 함 → asyncpg statement cache 끔.

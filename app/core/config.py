@@ -39,14 +39,15 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 
-    # Scheduler — 일 1회 새벽 배치
-    SCHEDULER_ENABLED: bool = False
-    SCHEDULER_HOUR_KST: int = 4   # 매일 04시 (KST)
-    SCHEDULER_MINUTE_KST: int = 0
+    # Daily ingest 작업 파라미터 (외부 cron이 트리거)
     SCHEDULER_PAGES_PER_ASSET: int = 20      # 자산타입별 페이지 수
     SCHEDULER_NUM_OF_ROWS: int = 200         # 페이지당 행
     SCHEDULER_BID_RESULT_LIMIT: int = 200    # 입찰결과 보강 1회 한도
     SCHEDULER_IMAGE_LIMIT: int = 0           # 이미지 보강 1회 한도 (0=skip; quota 보존)
+
+    # Cloud Scheduler → Cloud Run 인증 (OIDC)
+    CRON_SERVICE_ACCOUNT_EMAIL: str = ""     # Cloud Scheduler가 사용하는 SA 이메일
+    CRON_AUDIENCE: str = ""                  # 보통 Cloud Run 서비스 URL
 
     # 지오코딩 동시성
     GEOCODE_CONCURRENCY: int = 10

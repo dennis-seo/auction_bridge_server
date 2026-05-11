@@ -44,8 +44,11 @@ class Settings(BaseSettings):
     CORS_ORIGIN_REGEX: str = ""
 
     # Daily ingest 작업 파라미터 (외부 cron이 트리거)
-    SCHEDULER_PAGES_PER_ASSET: int = 20      # 자산타입별 페이지 수
-    SCHEDULER_NUM_OF_ROWS: int = 200         # 페이지당 행
+    # prpt_div_cd별로 페이징하므로 (자산타입 × prpt_div_cd) 단위로 적용된다.
+    # 일일 1000건/서비스 한도: 3 자산 × 7 카테고리 × 50 페이지 = 1050 (상한), 실제로는
+    # has_more=false로 일찍 종료되는 카테고리가 많아 200~500건 수준.
+    SCHEDULER_PAGES_PER_ASSET: int = 50      # 자산타입 × prpt_div_cd당 페이지 수
+    SCHEDULER_NUM_OF_ROWS: int = 500         # 페이지당 행
     SCHEDULER_BID_RESULT_LIMIT: int = 200    # 입찰결과 보강 1회 한도
     SCHEDULER_IMAGE_LIMIT: int = 0           # 이미지 보강 1회 한도 (0=skip; quota 보존)
 

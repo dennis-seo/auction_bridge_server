@@ -44,14 +44,17 @@ async def run_daily_onbid_ingest() -> dict:
     )
     logger.info(
         "Daily Onbid ingest done — pages=%d fetched=%d normalized=%d "
-        "geocoded=%d inserted=%d updated=%d",
+        "geocoded=%d inserted=%d updated=%d by_asset=%s by_prpt_div=%s",
         stats.pages, stats.fetched, stats.normalized,
         stats.geocoded, stats.inserted, stats.updated,
+        stats.by_asset, stats.by_prpt_div,
     )
     result["ingest"] = {
         "pages": stats.pages, "fetched": stats.fetched,
         "normalized": stats.normalized, "geocoded": stats.geocoded,
         "inserted": stats.inserted, "updated": stats.updated,
+        "by_asset": stats.by_asset,
+        "by_prpt_div": stats.by_prpt_div,
     }
 
     if settings.SCHEDULER_BID_RESULT_LIMIT > 0:

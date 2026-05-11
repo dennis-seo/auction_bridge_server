@@ -432,6 +432,16 @@ class IngestStats:
     updated: int = 0
     pages: int = 0
     by_asset: dict[str, int] = field(default_factory=dict)
+    by_prpt_div: dict[str, int] = field(default_factory=dict)
+
+
+def _accumulate(into: IngestStats, src: IngestStats) -> None:
+    into.fetched += src.fetched
+    into.normalized += src.normalized
+    into.geocoded += src.geocoded
+    into.inserted += src.inserted
+    into.updated += src.updated
+    into.pages += src.pages
 
 
 @dataclass(slots=True)
@@ -542,42 +552,63 @@ class OnbidIngestService:
         prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
         pvct_trgt_yn: str = "N",
     ) -> IngestStats:
-        return await self._run(
-            asset=asset,
-            max_pages=max_pages,
-            num_of_rows=num_of_rows,
-            prpt_div_cd=prpt_div_cd,
-            pvct_trgt_yn=pvct_trgt_yn,
-        )
+        codes = (prpt_div_cd,) if isinstance(prpt_div_cd, str) else tuple(prpt_div_cd)
+        total = IngestStats()
+        for code in codes:
+            try:
+                s = await self._run(
+                    asset=asset,
+                    max_pages=max_pages,
+                    num_of_rows=num_of_rows,
+                    prpt_div_cd=code,
+                    pvct_trgt_yn=pvct_trgt_yn,
+                )
+            except OnbidQuotaExceeded as e:
+                logger.warning(
+                    "Quota exceeded — stopping run_one at %s/%s: %s",
+                    asset.value, code, e,
+                )
+                break
+            _accumulate(total, s)
+            total.by_prpt_div[code] = total.by_prpt_div.get(code, 0) + s.normalized
+        total.by_asset[asset.value] = total.normalized
+        return total
 
     async def run_full(
         self,
         *,
         max_pages_per_asset: int = 50,
-        num_of_rows: int = 200,
+        num_of_rows: int = 500,
         prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
         pvct_trgt_yn: str = "N",
     ) -> IngestStats:
+        codes = (prpt_div_cd,) if isinstance(prpt_div_cd, str) else tuple(prpt_div_cd)
         total = IngestStats()
+        quota_hit = False
         for asset in OnbidAssetService:
-            try:
-                s = await self._run(
-                    asset=asset,
-                    max_pages=max_pages_per_asset,
-                    num_of_rows=num_of_rows,
-                    prpt_div_cd=prpt_div_cd,
-                    pvct_trgt_yn=pvct_trgt_yn,
-                )
-            except OnbidQuotaExceeded as e:
-                logger.warning("Quota exceeded — stopping run_full at %s: %s", asset.value, e)
+            asset_total = 0
+            for code in codes:
+                try:
+                    s = await self._run(
+                        asset=asset,
+                        max_pages=max_pages_per_asset,
+                        num_of_rows=num_of_rows,
+                        prpt_div_cd=code,
+                        pvct_trgt_yn=pvct_trgt_yn,
+                    )
+                except OnbidQuotaExceeded as e:
+                    logger.warning(
+                        "Quota exceeded — stopping run_full at %s/%s: %s",
+                        asset.value, code, e,
+                    )
+                    quota_hit = True
+                    break
+                _accumulate(total, s)
+                asset_total += s.normalized
+                total.by_prpt_div[code] = total.by_prpt_div.get(code, 0) + s.normalized
+            total.by_asset[asset.value] = asset_total
+            if quota_hit:
                 break
-            total.fetched += s.fetched
-            total.normalized += s.normalized
-            total.geocoded += s.geocoded
-            total.inserted += s.inserted
-            total.updated += s.updated
-            total.pages += s.pages
-            total.by_asset[asset.value] = s.normalized
         return total
 
     async def _run(
@@ -618,10 +649,10 @@ class OnbidIngestService:
                 stats.inserted += ins
                 stats.updated += upd
                 logger.info(
-                    "ingest asset=%s page=%d fetched=%d normalized=%d geocoded=%d "
-                    "inserted=%d updated=%d",
-                    asset.value, page.page_no, len(page.items), len(normalized),
-                    stats.geocoded, ins, upd,
+                    "ingest asset=%s prpt_div=%s page=%d fetched=%d normalized=%d "
+                    "geocoded=%d inserted=%d updated=%d",
+                    asset.value, prpt_div_cd, page.page_no, len(page.items),
+                    len(normalized), stats.geocoded, ins, upd,
                 )
         return stats
 

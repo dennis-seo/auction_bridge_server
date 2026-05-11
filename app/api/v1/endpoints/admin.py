@@ -87,6 +87,7 @@ async def sync_onbid(
             "updated": stats.updated,
             "pages": stats.pages,
             "by_asset": stats.by_asset,
+            "by_prpt_div": stats.by_prpt_div,
         },
     }
 

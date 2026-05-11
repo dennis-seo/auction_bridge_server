@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Auto-rebuild docs/ HTML guides when their sources are staged.
+#
+# Trigger files:
+#   onbid-api-guide.html  ← app/docs/*.docx, tools/build_onbid_guide.py
+#   server-api-guide.html ← app/api/**/*.py, app/domain/**/*.py, main.py,
+#                           tools/build_server_guide.py
+#
+# Activation (one-time):
+#   git config core.hooksPath tools/git-hooks
+#
+# To bypass occasionally (e.g. mid-WIP commit):
+#   git commit --no-verify
+set -eu
+
+# venv python (Windows / POSIX both supported)
+if [ -x .venv/Scripts/python.exe ]; then
+  PY=".venv/Scripts/python.exe"
+elif [ -x .venv/bin/python ]; then
+  PY=".venv/bin/python"
+else
+  PY="python"
+fi
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# Decide which guides need rebuild
+needs_onbid=0
+needs_server=0
+while IFS= read -r f; do
+  case "$f" in
+    app/docs/*.docx)               needs_onbid=1 ;;
+    tools/build_onbid_guide.py)    needs_onbid=1 ;;
+    app/api/*.py|app/api/**/*.py)  needs_server=1 ;;
+    app/domain/*.py|app/domain/**/*.py) needs_server=1 ;;
+    main.py)                       needs_server=1 ;;
+    tools/build_server_guide.py)   needs_server=1 ;;
+  esac
+done <<EOF
+$staged
+EOF
+
+# bash 3.x (macOS default) doesn't support ** in case patterns; fallback grep
+if [ "$needs_server" -eq 0 ]; then
+  if echo "$staged" | grep -qE '^(app/api/|app/domain/).*\.py$'; then
+    needs_server=1
+  fi
+fi
+if [ "$needs_server" -eq 0 ]; then
+  if echo "$staged" | grep -qE '^main\.py$'; then
+    needs_server=1
+  fi
+fi
+
+if [ "$needs_onbid" -eq 0 ] && [ "$needs_server" -eq 0 ]; then
+  exit 0
+fi
+
+echo "[pre-commit] regenerating HTML guides…"
+
+if [ "$needs_onbid" -eq 1 ]; then
+  "$PY" tools/build_onbid_guide.py
+  git add docs/onbid-api-guide.html
+fi
+
+if [ "$needs_server" -eq 1 ]; then
+  "$PY" tools/build_server_guide.py
+  git add docs/server-api-guide.html
+fi
+
+exit 0

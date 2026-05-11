@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AuctionBridge Server API 가이드</title>
+<style>
+:root {
+  --bg: #f8fafc;
+  --bg-elev: #ffffff;
+  --bg-code: #0f172a;
+  --fg: #0f172a;
+  --fg-muted: #64748b;
+  --border: #e2e8f0;
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --ok: #16a34a; --ok-soft: #dcfce7;
+  --warn: #d97706; --warn-soft: #fef3c7;
+  --no: #94a3b8; --no-soft: #f1f5f9;
+  --badge-req: #ef4444;
+  --shadow: 0 1px 2px rgba(15,23,42,0.04), 0 4px 12px rgba(15,23,42,0.06);
+  --m-get: #16a34a;
+  --m-get-soft: #dcfce7;
+  --m-post: #2563eb;
+  --m-post-soft: #dbeafe;
+  --m-put: #d97706;
+  --m-put-soft: #fef3c7;
+  --m-delete: #dc2626;
+  --m-delete-soft: #fee2e2;
+}
+[data-theme="dark"] {
+  --bg: #0b1220; --bg-elev: #111a2e; --bg-code: #050a17;
+  --fg: #e2e8f0; --fg-muted: #94a3b8; --border: #1e293b;
+  --accent: #60a5fa; --accent-soft: #1e3a8a;
+  --ok: #4ade80; --ok-soft: #14532d;
+  --warn: #fbbf24; --warn-soft: #78350f;
+  --no: #475569; --no-soft: #1e293b;
+  --m-get: #4ade80; --m-get-soft: #14532d;
+  --m-post: #60a5fa; --m-post-soft: #1e3a8a;
+  --m-put: #fbbf24; --m-put-soft: #78350f;
+  --m-delete: #f87171; --m-delete-soft: #7f1d1d;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard",
+    "Apple SD Gothic Neo", "Noto Sans KR", Roboto, sans-serif;
+  background: var(--bg); color: var(--fg);
+  font-size: 14px; line-height: 1.55;
+}
+header.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex; align-items: center; gap: 16px;
+}
+header.topbar h1 { margin: 0; font-size: 16px; font-weight: 700; }
+header.topbar .sub { font-size: 12px; color: var(--fg-muted); margin-left: 4px; }
+header.topbar .grow { flex: 1; }
+.search {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 12px; width: 320px; max-width: 100%;
+}
+.search input {
+  flex: 1; border: 0; background: transparent; outline: none;
+  color: var(--fg); font-size: 13px;
+}
+.theme-toggle {
+  border: 1px solid var(--border); background: var(--bg-elev); color: var(--fg);
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px;
+}
+.theme-toggle:hover { background: var(--bg); }
+main { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 56px); }
+nav.side {
+  border-right: 1px solid var(--border); background: var(--bg-elev);
+  padding: 16px 0; position: sticky; top: 56px; height: calc(100vh - 56px);
+  overflow-y: auto;
+}
+nav.side .cat {
+  padding: 4px 18px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--fg-muted); margin-top: 14px;
+}
+nav.side a {
+  display: block; padding: 6px 18px;
+  color: var(--fg); text-decoration: none; font-size: 13px;
+  border-left: 2px solid transparent;
+}
+nav.side a:hover { background: var(--bg); }
+nav.side a.active {
+  background: var(--accent-soft); border-left-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+nav.side a .method-mini {
+  display: inline-block; width: 36px; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px;
+}
+nav.side a .method-mini.get { color: var(--m-get); }
+nav.side a .method-mini.post { color: var(--m-post); }
+nav.side a .method-mini.put { color: var(--m-put); }
+nav.side a .method-mini.delete { color: var(--m-delete); }
+section.content { padding: 24px 32px 80px; max-width: 1100px; }
+.hero {
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px 28px; margin-bottom: 20px; box-shadow: var(--shadow);
+}
+.hero h2 { margin: 0 0 6px; font-size: 22px; }
+.hero p { margin: 6px 0; color: var(--fg-muted); font-size: 13px; }
+.basebar {
+  display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; margin: 16px 0 0;
+}
+.basebar .item { display: inline-flex; align-items: center; gap: 6px; }
+.basebar .item code {
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 4px;
+  font-family: ui-monospace, monospace;
+}
+.catbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 0; }
+.cathip {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+  padding: 6px 14px; font-size: 12px; color: var(--fg-muted); text-decoration: none;
+}
+.cathip:hover { color: var(--fg); border-color: var(--fg-muted); }
+
+.cat-section { margin-bottom: 48px; }
+.cat-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.cat-header h3 { margin: 0; font-size: 20px; }
+.cat-header .icon { font-size: 24px; }
+.cat-header .sub { color: var(--fg-muted); font-size: 13px; }
+.cat-when {
+  font-size: 12.5px; padding: 8px 14px;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: 8px; margin-bottom: 16px; border-left: 3px solid var(--accent);
+}
+[data-theme="dark"] .cat-when { color: #cbd5e1; }
+
+.api-card {
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 22px; margin-bottom: 14px; box-shadow: var(--shadow);
+}
+.api-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.method {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 3px 10px; border-radius: 4px;
+}
+.method.get { background: var(--m-get-soft); color: var(--m-get); }
+.method.post { background: var(--m-post-soft); color: var(--m-post); }
+.method.put { background: var(--m-put-soft); color: var(--m-put); }
+.method.delete { background: var(--m-delete-soft); color: var(--m-delete); }
+.path-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13.5px; font-weight: 600;
+}
+.auth-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600;
+  margin-left: auto;
+}
+.auth-badge.public { background: var(--ok-soft); color: var(--ok); }
+.auth-badge.admin { background: var(--warn-soft); color: var(--warn); }
+.auth-badge.oidc { background: var(--m-post-soft); color: var(--m-post); }
+.api-summary {
+  margin: 8px 0 4px; font-size: 14.5px; font-weight: 600;
+}
+.api-desc { color: var(--fg-muted); font-size: 13px; margin: 4px 0 12px; }
+.codeblock {
+  background: var(--bg-code); color: #e2e8f0;
+  border-radius: 8px; padding: 12px 14px;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-all;
+  margin: 10px 0; overflow-x: auto;
+}
+.codeblock .verb { color: #facc15; font-weight: 700; }
+.codeblock .key { color: #93c5fd; }
+.codeblock .val { color: #fcd34d; }
+.codeblock .comment { color: #94a3b8; }
+.kv-grid {
+  display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px;
+  font-size: 13px; margin: 10px 0;
+}
+.kv-grid .k { color: var(--fg-muted); }
+.kv-grid .v { font-family: ui-monospace, monospace; word-break: break-all; }
+table.params { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 8px 0 0; }
+table.params th, table.params td {
+  border-bottom: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top;
+}
+table.params th {
+  font-weight: 600; font-size: 11.5px; color: var(--fg-muted);
+  text-transform: uppercase; letter-spacing: 0.04em; background: var(--bg);
+}
+table.params td.name { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
+table.params td.type { font-family: ui-monospace, monospace; color: var(--fg-muted); font-size: 11.5px; }
+table.params td.sample { font-family: ui-monospace, monospace; color: var(--fg-muted); }
+.badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: 4px; }
+.badge.req { background: rgba(239,68,68,0.12); color: var(--badge-req); }
+.badge.opt { background: rgba(148,163,184,0.18); color: var(--no); }
+.badge.in {
+  background: var(--no-soft); color: var(--no); font-weight: 600;
+  margin-left: 0; margin-right: 4px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.badge.in.query { background: var(--accent-soft); color: var(--accent); }
+.badge.in.path { background: var(--ok-soft); color: var(--ok); }
+.badge.in.header { background: var(--warn-soft); color: var(--warn); }
+details { margin: 12px 0; }
+details summary {
+  cursor: pointer; user-select: none; font-size: 13px; font-weight: 600;
+  color: var(--accent); padding: 4px 0;
+}
+details[open] summary { margin-bottom: 8px; }
+.hidden { display: none !important; }
+.response-row {
+  display: grid; grid-template-columns: 70px 1fr;
+  gap: 8px 14px; padding: 6px 0; border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.response-row .code {
+  font-weight: 700; font-family: ui-monospace, monospace;
+}
+.response-row .code.ok { color: var(--ok); }
+.response-row .code.client { color: var(--warn); }
+.response-row .code.server { color: var(--m-delete); }
+@media (max-width: 880px) {
+  main { grid-template-columns: 1fr; }
+  nav.side { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  section.content { padding: 16px; }
+  .search { width: 160px; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>AuctionBridge Server API <span class="sub">v0.1.0</span></h1>
+  <div class="grow"></div>
+  <div class="search">
+    <span style="color:var(--fg-muted)">🔍</span>
+    <input id="q" type="search" placeholder="검색 (예: bbox, vehicle, enrich)">
+  </div>
+  <button id="theme" class="theme-toggle">🌙 Dark</button>
+</header>
+<main>
+<nav class="side"><div class='cat'>지도/매물 조회 (공개)</div>
+<a href='#get-api-v1-auctions' data-target='get-api-v1-auctions'><span class='method-mini get'>GET</span>/auctions</a>
+<a href='#get-api-v1-auctions-stats' data-target='get-api-v1-auctions-stats'><span class='method-mini get'>GET</span>/auctions/stats</a>
+<a href='#get-api-v1-auctions-auction_id' data-target='get-api-v1-auctions-auction_id'><span class='method-mini get'>GET</span>/auctions/{auction_id}</a>
+<div class='cat'>차량 조회 (공개)</div>
+<a href='#get-api-v1-vehicles' data-target='get-api-v1-vehicles'><span class='method-mini get'>GET</span>/vehicles</a>
+<a href='#get-api-v1-vehicles-stats' data-target='get-api-v1-vehicles-stats'><span class='method-mini get'>GET</span>/vehicles/stats</a>
+<div class='cat'>관리/보강 (Admin)</div>
+<a href='#post-api-v1-admin-enrich-bid-results' data-target='post-api-v1-admin-enrich-bid-results'><span class='method-mini post'>POST</span>/admin/enrich/bid-results</a>
+<a href='#post-api-v1-admin-enrich-bid-results-list' data-target='post-api-v1-admin-enrich-bid-results-list'><span class='method-mini post'>POST</span>/admin/enrich/bid-results-list</a>
+<a href='#post-api-v1-admin-enrich-movable-images' data-target='post-api-v1-admin-enrich-movable-images'><span class='method-mini post'>POST</span>/admin/enrich/movable-images</a>
+<a href='#post-api-v1-admin-enrich-realty-images' data-target='post-api-v1-admin-enrich-realty-images'><span class='method-mini post'>POST</span>/admin/enrich/realty-images</a>
+<a href='#post-api-v1-admin-sync-onbid' data-target='post-api-v1-admin-sync-onbid'><span class='method-mini post'>POST</span>/admin/sync/onbid</a>
+<div class='cat'>시스템/내부 (Internal)</div>
+<a href='#post-api-v1-internal-cron-daily-ingest' data-target='post-api-v1-internal-cron-daily-ingest'><span class='method-mini post'>POST</span>/internal/cron/daily-ingest</a>
+<a href='#get-health' data-target='get-health'><span class='method-mini get'>GET</span>/health</a></nav>
+<section class="content">
+  <div class="hero">
+    <h2>이 서버가 제공하는 API</h2>
+    <p>대한민국 법원 경매 / 캠코 온비드 통합 API</p>
+    <div class="basebar">
+      <span class="item">🌍 운영: <code>https://auctionbridge-api-ak2wcqba2q-du.a.run.app</code></span>
+      <span class="item">💻 로컬: <code>http://localhost:8000</code></span>
+      <span class="item">📋 OpenAPI: <code>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/openapi.json</code></span>
+      <span class="item">📖 Swagger UI: <code>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/docs</code></span>
+    </div>
+    <div class="catbar"><a class='cathip' href='#cat-public-map'>🗺️ 지도/매물 조회 (공개)</a><a class='cathip' href='#cat-public-vehicles'>🚗 차량 조회 (공개)</a><a class='cathip' href='#cat-admin'>🛠️ 관리/보강 (Admin)</a><a class='cathip' href='#cat-internal'>⚙️ 시스템/내부 (Internal)</a></div>
+  </div>
+  
+<section class="cat-section" id="cat-public-map">
+  <div class="cat-header">
+    <div class="icon">🗺️</div>
+    <h3>지도/매물 조회 (공개)</h3>
+    <div class="sub">프론트엔드 지도·상세 화면이 호출하는 매물 API</div>
+  </div>
+  <div class="cat-when"><strong>언제 쓰나요?</strong> 지도 뷰포트(BBox) 안의 매물 마커, 매물 상세, 카테고리별 통계를 가져올 때</div>
+  
+<div class="api-card" id="get-api-v1-auctions">
+  <div class="api-title-row">
+    <span class="method get">GET</span>
+    <span class="path-mono">/api/v1/auctions</span>
+    <span class="auth-badge public">🌐 공개</span>
+  </div>
+  <div class="api-summary">지도 BBox 안의 매물 목록 (지도 마커용)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>GET</div><div class='k'>경로</div><div class='v'>/api/v1/auctions</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/auctions</div><div class='k'>태그</div><div class='v'>auctions</div></div>
+    <div class="codeblock"><span class="verb">GET</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions?min_lng=127.5&amp;min_lat=127.5&amp;max_lng=127.5&amp;max_lat=127.5
+
+# bash
+curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions?min_lng=127.5&amp;min_lat=127.5&amp;max_lng=127.5&amp;max_lat=127.5&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (9개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>min_lng</td><td class='type'>number</td><td><span class="badge req">필수</span></td><td class='sample'></td><td>BBox 좌하 경도</td></tr><tr><td class='name'><span class="badge in query">query</span>min_lat</td><td class='type'>number</td><td><span class="badge req">필수</span></td><td class='sample'></td><td>BBox 좌하 위도</td></tr><tr><td class='name'><span class="badge in query">query</span>max_lng</td><td class='type'>number</td><td><span class="badge req">필수</span></td><td class='sample'></td><td>BBox 우상 경도</td></tr><tr><td class='name'><span class="badge in query">query</span>max_lat</td><td class='type'>number</td><td><span class="badge req">필수</span></td><td class='sample'></td><td>BBox 우상 위도</td></tr><tr><td class='name'><span class="badge in query">query</span>asset_type</td><td class='type'>AssetType</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>realty/movable/vehicle</td></tr><tr><td class='name'><span class="badge in query">query</span>property_category</td><td class='type'>PropertyCategory</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>asset_type=realty일 때 의미 있음</td></tr><tr><td class='name'><span class="badge in query">query</span>vehicle_category</td><td class='type'>VehicleCategory</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>asset_type=vehicle일 때 의미 있음</td></tr><tr><td class='name'><span class="badge in query">query</span>status</td><td class='type'>AuctionStatus</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>Status</td></tr><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>200</td><td>Limit</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted);margin-bottom:6px'>응답 타입: <code>AuctionListResponse</code></div><table class='params'><thead><tr><th>필드</th><th>타입</th><th>필수</th><th>설명</th></tr></thead><tbody><tr><td class='name'>items</td><td class='type'>array&lt;AuctionListItem&gt;</td><td><span class="badge req">필수</span></td><td>Items</td></tr><tr><td class='name'>truncated</td><td class='type'>boolean</td><td><span class="badge opt">선택</span></td><td>True면 limit에 의해 잘림 — 클라이언트가 줌인 유도</td></tr></tbody></table></details>
+  </details>
+</div>
+
+<div class="api-card" id="get-api-v1-auctions-stats">
+  <div class="api-title-row">
+    <span class="method get">GET</span>
+    <span class="path-mono">/api/v1/auctions/stats</span>
+    <span class="auth-badge public">🌐 공개</span>
+  </div>
+  <div class="api-summary">자산타입/카테고리별 진행 건수 (벤토 그리드용)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>GET</div><div class='k'>경로</div><div class='v'>/api/v1/auctions/stats</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions/stats</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/auctions/stats</div><div class='k'>태그</div><div class='v'>auctions</div></div>
+    <div class="codeblock"><span class="verb">GET</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions/stats
+
+# bash
+curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions/stats&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (0개)</summary>
+    <p style="color:var(--fg-muted);font-size:12.5px;">정의된 파라미터 없음</p>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted);margin-bottom:6px'>응답 타입: <code>AuctionStatsResponse</code></div><table class='params'><thead><tr><th>필드</th><th>타입</th><th>필수</th><th>설명</th></tr></thead><tbody><tr><td class='name'>total</td><td class='type'>integer</td><td><span class="badge req">필수</span></td><td>진행 중인 전체 매물 수</td></tr><tr><td class='name'>groups</td><td class='type'>array&lt;AssetGroupStat&gt;</td><td><span class="badge req">필수</span></td><td>Groups</td></tr><tr><td class='name'>by_source</td><td class='type'>array&lt;SourceStat&gt;</td><td><span class="badge req">필수</span></td><td>By Source</td></tr></tbody></table></details>
+  </details>
+</div>
+
+<div class="api-card" id="get-api-v1-auctions-auction_id">
+  <div class="api-title-row">
+    <span class="method get">GET</span>
+    <span class="path-mono">/api/v1/auctions/{auction_id}</span>
+    <span class="auth-badge public">🌐 공개</span>
+  </div>
+  <div class="api-summary">매물 상세 (asset_type별 details 폴리모픽 + 권리분석)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>GET</div><div class='k'>경로</div><div class='v'>/api/v1/auctions/{auction_id}</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions/{auction_id}</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/auctions/{auction_id}</div><div class='k'>태그</div><div class='v'>auctions</div></div>
+    <div class="codeblock"><span class="verb">GET</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions/10
+
+# bash
+curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/auctions/10&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (1개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in path">path</span>auction_id</td><td class='type'>integer</td><td><span class="badge req">필수</span></td><td class='sample'></td><td>Auction Id</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted);margin-bottom:6px'>응답 타입: <code>AuctionDetail</code></div><table class='params'><thead><tr><th>필드</th><th>타입</th><th>필수</th><th>설명</th></tr></thead><tbody><tr><td class='name'>id</td><td class='type'>integer</td><td><span class="badge req">필수</span></td><td>Id</td></tr><tr><td class='name'>source</td><td class='type'>AuctionSource</td><td><span class="badge req">필수</span></td><td></td></tr><tr><td class='name'>asset_type</td><td class='type'>AssetType</td><td><span class="badge req">필수</span></td><td></td></tr><tr><td class='name'>status</td><td class='type'>AuctionStatus</td><td><span class="badge req">필수</span></td><td></td></tr><tr><td class='name'>title</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Title</td></tr><tr><td class='name'>cltr_mng_no</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Cltr Mng No</td></tr><tr><td class='name'>pbct_cdtn_no</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>Pbct Cdtn No</td></tr><tr><td class='name'>onbid_cltr_no</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>Onbid Cltr No</td></tr><tr><td class='name'>onbid_pbanc_no</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>Onbid Pbanc No</td></tr><tr><td class='name'>pbct_no</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>Pbct No</td></tr><tr><td class='name'>case_number</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Case Number</td></tr><tr><td class='name'>court_name</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Court Name</td></tr><tr><td class='name'>address</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Address</td></tr><tr><td class='name'>region_sido</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Region Sido</td></tr><tr><td class='name'>region_sigungu</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Region Sigungu</td></tr><tr><td class='name'>region_emd</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Region Emd</td></tr><tr><td class='name'>lat</td><td class='type'>number</td><td><span class="badge opt">선택</span></td><td>Lat</td></tr><tr><td class='name'>lng</td><td class='type'>number</td><td><span class="badge opt">선택</span></td><td>Lng</td></tr><tr><td class='name'>appraisal_price</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>Appraisal Price</td></tr><tr><td class='name'>min_bid_price</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>Min Bid Price</td></tr><tr><td class='name'>min_bid_price_text</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Min Bid Price Text</td></tr><tr><td class='name'>first_bid_price</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>First Bid Price</td></tr><tr><td class='name'>apsl_lowst_ratio</td><td class='type'>number</td><td><span class="badge opt">선택</span></td><td>Apsl Lowst Ratio</td></tr><tr><td class='name'>frst_lowst_ratio</td><td class='type'>number</td><td><span class="badge opt">선택</span></td><td>Frst Lowst Ratio</td></tr><tr><td class='name'>fee_rate</td><td class='type'>number</td><td><span class="badge opt">선택</span></td><td>Fee Rate</td></tr><tr><td class='name'>bid_begin_at</td><td class='type'>string(date-time)</td><td><span class="badge opt">선택</span></td><td>Bid Begin At</td></tr><tr><td class='name'>bid_end_at</td><td class='type'>string(date-time)</td><td><span class="badge opt">선택</span></td><td>Bid End At</td></tr><tr><td class='name'>failed_count</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>Failed Count</td></tr><tr><td class='name'>progress_count</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td>Progress Count</td></tr><tr><td class='name'>pvct_trgt_yn</td><td class='type'>boolean</td><td><span class="badge opt">선택</span></td><td>Pvct Trgt Yn</td></tr><tr><td class='name'>code_names</td><td class='type'>AuctionCodeNames</td><td><span class="badge opt">선택</span></td><td></td></tr><tr><td class='name'>bid_options</td><td class='type'>AuctionBidOptions</td><td><span class="badge opt">선택</span></td><td></td></tr><tr><td class='name'>request_org_nm</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Request Org Nm</td></tr><tr><td class='name'>announce_org_nm</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Announce Org Nm</td></tr><tr><td class='name'>thumbnail_url</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Thumbnail Url</td></tr><tr><td class='name'>image_urls</td><td class='type'>array&lt;string&gt;</td><td><span class="badge opt">선택</span></td><td>Image Urls</td></tr><tr><td class='name'>evc_rsby_target</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td>Evc Rsby Target</td></tr><tr><td class='name'>details</td><td class='type'>RealtyDetails | VehicleDetails | MovableDetails</td><td><span class="badge opt">선택</span></td><td>Details</td></tr><tr><td class='name'>rights_analysis</td><td class='type'>RightsAnalysisSummary</td><td><span class="badge opt">선택</span></td><td></td></tr></tbody></table></details>
+  </details>
+</div>
+
+</section>
+
+<section class="cat-section" id="cat-public-vehicles">
+  <div class="cat-header">
+    <div class="icon">🚗</div>
+    <h3>차량 조회 (공개)</h3>
+    <div class="sub">자동차 리스트·필터·통계 — 차량 전용 화면용</div>
+  </div>
+  <div class="cat-when"><strong>언제 쓰나요?</strong> 차량 카테고리·연료·연식·주행거리 조건으로 매물 리스트와 facet 통계를 가져올 때</div>
+  
+<div class="api-card" id="get-api-v1-vehicles">
+  <div class="api-title-row">
+    <span class="method get">GET</span>
+    <span class="path-mono">/api/v1/vehicles</span>
+    <span class="auth-badge public">🌐 공개</span>
+  </div>
+  <div class="api-summary">자동차 리스트 (필터 + offset/limit 페이지네이션, 공고 시작일 최신순)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>GET</div><div class='k'>경로</div><div class='v'>/api/v1/vehicles</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/vehicles</div><div class='k'>태그</div><div class='v'>vehicles</div></div>
+    <div class="codeblock"><span class="verb">GET</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles
+
+# bash
+curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (14개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>vehicle_category</td><td class='type'>VehicleCategory</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>sedan/van/truck/bus/motorcycle/special/etc</td></tr><tr><td class='name'><span class="badge in query">query</span>maker</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>제조사 부분 일치</td></tr><tr><td class='name'><span class="badge in query">query</span>fuel</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>연료 부분 일치</td></tr><tr><td class='name'><span class="badge in query">query</span>transmission</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>변속기 부분 일치</td></tr><tr><td class='name'><span class="badge in query">query</span>year_model_min</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>연식 하한 (YYYY)</td></tr><tr><td class='name'><span class="badge in query">query</span>year_model_max</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>연식 상한 (YYYY)</td></tr><tr><td class='name'><span class="badge in query">query</span>mileage_km_min</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>Mileage Km Min</td></tr><tr><td class='name'><span class="badge in query">query</span>mileage_km_max</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>Mileage Km Max</td></tr><tr><td class='name'><span class="badge in query">query</span>displacement_cc_min</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>Displacement Cc Min</td></tr><tr><td class='name'><span class="badge in query">query</span>displacement_cc_max</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>Displacement Cc Max</td></tr><tr><td class='name'><span class="badge in query">query</span>status</td><td class='type'>AuctionStatus</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>Status</td></tr><tr><td class='name'><span class="badge in query">query</span>region_sido</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>Region Sido</td></tr><tr><td class='name'><span class="badge in query">query</span>offset</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>0</td><td>Offset</td></tr><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>20</td><td>Limit</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted);margin-bottom:6px'>응답 타입: <code>VehicleListResponse</code></div><table class='params'><thead><tr><th>필드</th><th>타입</th><th>필수</th><th>설명</th></tr></thead><tbody><tr><td class='name'>items</td><td class='type'>array&lt;VehicleListItem&gt;</td><td><span class="badge req">필수</span></td><td>Items</td></tr><tr><td class='name'>total</td><td class='type'>integer</td><td><span class="badge req">필수</span></td><td>필터 조건에 매칭되는 총 건수</td></tr><tr><td class='name'>offset</td><td class='type'>integer</td><td><span class="badge req">필수</span></td><td>Offset</td></tr><tr><td class='name'>limit</td><td class='type'>integer</td><td><span class="badge req">필수</span></td><td>Limit</td></tr></tbody></table></details>
+  </details>
+</div>
+
+<div class="api-card" id="get-api-v1-vehicles-stats">
+  <div class="api-title-row">
+    <span class="method get">GET</span>
+    <span class="path-mono">/api/v1/vehicles/stats</span>
+    <span class="auth-badge public">🌐 공개</span>
+  </div>
+  <div class="api-summary">자동차 facet/통계 (카테고리/연료/변속기/maker top 20/연식)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>GET</div><div class='k'>경로</div><div class='v'>/api/v1/vehicles/stats</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles/stats</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/vehicles/stats</div><div class='k'>태그</div><div class='v'>vehicles</div></div>
+    <div class="codeblock"><span class="verb">GET</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles/stats
+
+# bash
+curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles/stats&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (0개)</summary>
+    <p style="color:var(--fg-muted);font-size:12.5px;">정의된 파라미터 없음</p>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted);margin-bottom:6px'>응답 타입: <code>VehicleStatsResponse</code></div><table class='params'><thead><tr><th>필드</th><th>타입</th><th>필수</th><th>설명</th></tr></thead><tbody><tr><td class='name'>total</td><td class='type'>integer</td><td><span class="badge req">필수</span></td><td>진행 중인(scheduled+ongoing) 차량 매물 수</td></tr><tr><td class='name'>by_category</td><td class='type'>array&lt;VehicleFacetCount&gt;</td><td><span class="badge req">필수</span></td><td>By Category</td></tr><tr><td class='name'>by_fuel</td><td class='type'>array&lt;VehicleFacetCount&gt;</td><td><span class="badge req">필수</span></td><td>By Fuel</td></tr><tr><td class='name'>by_transmission</td><td class='type'>array&lt;VehicleFacetCount&gt;</td><td><span class="badge req">필수</span></td><td>By Transmission</td></tr><tr><td class='name'>by_maker_top</td><td class='type'>array&lt;VehicleMakerCount&gt;</td><td><span class="badge req">필수</span></td><td>By Maker Top</td></tr><tr><td class='name'>by_year_model</td><td class='type'>array&lt;VehicleYearBucket&gt;</td><td><span class="badge req">필수</span></td><td>By Year Model</td></tr></tbody></table></details>
+  </details>
+</div>
+
+</section>
+
+<section class="cat-section" id="cat-admin">
+  <div class="cat-header">
+    <div class="icon">🛠️</div>
+    <h3>관리/보강 (Admin)</h3>
+    <div class="sub">온비드 데이터 수동 동기화 및 enrich (현재 인증 게이트 없음, local 한정)</div>
+  </div>
+  <div class="cat-when"><strong>언제 쓰나요?</strong> 수동으로 ingest를 돌리거나, 사진·입찰결과를 보강해야 할 때 (운영에서는 직접 호출 자제)</div>
+  
+<div class="api-card" id="post-api-v1-admin-enrich-bid-results">
+  <div class="api-title-row">
+    <span class="method post">POST</span>
+    <span class="path-mono">/api/v1/admin/enrich/bid-results</span>
+    <span class="auth-badge admin">🔒 Admin (local)</span>
+  </div>
+  <div class="api-summary">만료된 ongoing 매물의 입찰결과를 보강 (status: SOLD/FAILED/CANCELLED 확정)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>POST</div><div class='k'>경로</div><div class='v'>/api/v1/admin/enrich/bid-results</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/admin/enrich/bid-results</div><div class='k'>태그</div><div class='v'>admin</div></div>
+    <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results
+
+# bash
+curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (1개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted)'>응답 타입: <code>object</code></div></details>
+  </details>
+</div>
+
+<div class="api-card" id="post-api-v1-admin-enrich-bid-results-list">
+  <div class="api-title-row">
+    <span class="method post">POST</span>
+    <span class="path-mono">/api/v1/admin/enrich/bid-results-list</span>
+    <span class="auth-badge admin">🔒 Admin (local)</span>
+  </div>
+  <div class="api-summary">#8 입찰결과목록으로 최근 개찰분 일괄 보강 (호출 수 절감)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>POST</div><div class='k'>경로</div><div class='v'>/api/v1/admin/enrich/bid-results-list</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results-list</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/admin/enrich/bid-results-list</div><div class='k'>태그</div><div class='v'>admin</div></div>
+    <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results-list
+
+# bash
+curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results-list&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (3개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>days_lookback</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>2</td><td>Days Lookback</td></tr><tr><td class='name'><span class="badge in query">query</span>num_of_rows</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>100</td><td>Num Of Rows</td></tr><tr><td class='name'><span class="badge in query">query</span>max_pages</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>20</td><td>Max Pages</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted)'>응답 타입: <code>object</code></div></details>
+  </details>
+</div>
+
+<div class="api-card" id="post-api-v1-admin-enrich-movable-images">
+  <div class="api-title-row">
+    <span class="method post">POST</span>
+    <span class="path-mono">/api/v1/admin/enrich/movable-images</span>
+    <span class="auth-badge admin">🔒 Admin (local)</span>
+  </div>
+  <div class="api-summary">동산 상세 API(#5)로 image_urls 보강</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>POST</div><div class='k'>경로</div><div class='v'>/api/v1/admin/enrich/movable-images</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/movable-images</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/admin/enrich/movable-images</div><div class='k'>태그</div><div class='v'>admin</div></div>
+    <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/movable-images
+
+# bash
+curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/movable-images&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (1개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted)'>응답 타입: <code>object</code></div></details>
+  </details>
+</div>
+
+<div class="api-card" id="post-api-v1-admin-enrich-realty-images">
+  <div class="api-title-row">
+    <span class="method post">POST</span>
+    <span class="path-mono">/api/v1/admin/enrich/realty-images</span>
+    <span class="auth-badge admin">🔒 Admin (local)</span>
+  </div>
+  <div class="api-summary">부동산 상세 API로 image_urls 보강 (일일 쿼터 주의)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>POST</div><div class='k'>경로</div><div class='v'>/api/v1/admin/enrich/realty-images</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/realty-images</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/admin/enrich/realty-images</div><div class='k'>태그</div><div class='v'>admin</div></div>
+    <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/realty-images
+
+# bash
+curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/realty-images&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (1개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted)'>응답 타입: <code>object</code></div></details>
+  </details>
+</div>
+
+<div class="api-card" id="post-api-v1-admin-sync-onbid">
+  <div class="api-title-row">
+    <span class="method post">POST</span>
+    <span class="path-mono">/api/v1/admin/sync/onbid</span>
+    <span class="auth-badge admin">🔒 Admin (local)</span>
+  </div>
+  <div class="api-summary">온비드 데이터 수동 동기화 (개발용)</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>POST</div><div class='k'>경로</div><div class='v'>/api/v1/admin/sync/onbid</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/sync/onbid</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/admin/sync/onbid</div><div class='k'>태그</div><div class='v'>admin</div></div>
+    <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/sync/onbid
+
+# bash
+curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/sync/onbid&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (3개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>asset</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>자산타입. &#x27;realty&#x27;|&#x27;movable&#x27;|&#x27;vehicle&#x27;. 미지정 시 전체.</td></tr><tr><td class='name'><span class="badge in query">query</span>pages</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>1</td><td>Pages</td></tr><tr><td class='name'><span class="badge in query">query</span>num_of_rows</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Num Of Rows</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted)'>응답 타입: <code>object</code></div></details>
+  </details>
+</div>
+
+</section>
+
+<section class="cat-section" id="cat-internal">
+  <div class="cat-header">
+    <div class="icon">⚙️</div>
+    <h3>시스템/내부 (Internal)</h3>
+    <div class="sub">Cloud Scheduler·헬스체크 등 내부 트리거</div>
+  </div>
+  <div class="cat-when"><strong>언제 쓰나요?</strong> Cloud Run 컨테이너 헬스체크, Cloud Scheduler가 OIDC 토큰으로 데일리 cron을 호출할 때</div>
+  
+<div class="api-card" id="post-api-v1-internal-cron-daily-ingest">
+  <div class="api-title-row">
+    <span class="method post">POST</span>
+    <span class="path-mono">/api/v1/internal/cron/daily-ingest</span>
+    <span class="auth-badge oidc">🔑 OIDC 필요</span>
+  </div>
+  <div class="api-summary">일 1회 온비드 ingest (Cloud Scheduler 호출)</div>
+  <p class="api-desc">Cloud Scheduler가 OIDC ID 토큰(Authorization: Bearer)을 붙여 호출하는 내부 엔드포인트. 토큰의 audience가 settings.CRON_AUDIENCE(=Cloud Run service URL)와 같고, 발급자 이메일이 CRON_SERVICE_ACCOUNT_EMAIL과 정확히 일치해야 통과한다. ingest → 입찰결과 #8 보강 → #9 fallback → 부동산 사진 → 동산 사진 순으로 실행한다.</p>
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>POST</div><div class='k'>경로</div><div class='v'>/api/v1/internal/cron/daily-ingest</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/internal/cron/daily-ingest</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/internal/cron/daily-ingest</div><div class='k'>태그</div><div class='v'>cron</div></div>
+    <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/internal/cron/daily-ingest
+
+# bash
+curl -s -X POST -H &quot;Authorization: Bearer &lt;OIDC_ID_TOKEN&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/internal/cron/daily-ingest&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (1개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in header">header</span>Authorization</td><td class='type'>string</td><td><span class="badge req">필수</span></td><td class='sample'></td><td>Bearer &lt;Google OIDC ID Token&gt;</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>정상 — 단계별 통계 dict</div></div><div class='response-row'><div class='code client'>401</div><div>missing bearer / invalid token</div></div><div class='response-row'><div class='code client'>403</div><div>email mismatch</div></div><div class='response-row'><div class='code server'>503</div><div>cron auth not configured (env 미주입)</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted);margin-bottom:6px'>응답 타입: <code>object</code></div><table class='params'><thead><tr><th>필드</th><th>타입</th><th>필수</th><th>설명</th></tr></thead><tbody><tr><td class='name'>ok</td><td class='type'>boolean</td><td><span class="badge opt">선택</span></td><td></td></tr><tr><td class='name'>result</td><td class='type'>object</td><td><span class="badge opt">선택</span></td><td></td></tr></tbody></table></details>
+  </details>
+</div>
+
+<div class="api-card" id="get-health">
+  <div class="api-title-row">
+    <span class="method get">GET</span>
+    <span class="path-mono">/health</span>
+    <span class="auth-badge oidc">🔑 OIDC 필요</span>
+  </div>
+  <div class="api-summary">Health</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>GET</div><div class='k'>경로</div><div class='v'>/health</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/health</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/health</div><div class='k'>태그</div><div class='v'>meta</div></div>
+    <div class="codeblock"><span class="verb">GET</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/health
+
+# bash
+curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/health&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (0개)</summary>
+    <p style="color:var(--fg-muted);font-size:12.5px;">정의된 파라미터 없음</p>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div>
+  </details>
+</div>
+
+</section>
+
+</section>
+</main>
+<script>
+(function () {
+  const q = document.getElementById('q');
+  const cards = document.querySelectorAll('.api-card');
+  const cats = document.querySelectorAll('.cat-section');
+  function applyFilter() {
+    const term = q.value.trim().toLowerCase();
+    cards.forEach(c => {
+      if (!term) { c.classList.remove('hidden'); return; }
+      const text = c.textContent.toLowerCase();
+      c.classList.toggle('hidden', !text.includes(term));
+    });
+    cats.forEach(s => {
+      const visible = s.querySelectorAll('.api-card:not(.hidden)').length;
+      s.classList.toggle('hidden', term && visible === 0);
+    });
+  }
+  q.addEventListener('input', applyFilter);
+
+  const links = document.querySelectorAll('nav.side a[data-target]');
+  const targets = Array.from(links).map(a => document.getElementById(a.dataset.target));
+  function onScroll() {
+    let active = null;
+    const scrollY = window.scrollY + 100;
+    targets.forEach((t, i) => {
+      if (t && t.offsetTop <= scrollY) active = links[i];
+    });
+    links.forEach(l => l.classList.toggle('active', l === active));
+  }
+  window.addEventListener('scroll', onScroll); onScroll();
+
+  const tt = document.getElementById('theme');
+  const saved = localStorage.getItem('theme') || 'light';
+  document.documentElement.dataset.theme = saved;
+  tt.textContent = saved === 'dark' ? '☀️ Light' : '🌙 Dark';
+  tt.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem('theme', next);
+    tt.textContent = next === 'dark' ? '☀️ Light' : '🌙 Dark';
+  });
+
+  // copy curl
+  document.querySelectorAll('.codeblock').forEach(b => {
+    b.addEventListener('dblclick', () => {
+      const sel = window.getSelection(); const range = document.createRange();
+      range.selectNodeContents(b); sel.removeAllRanges(); sel.addRange(range);
+    });
+  });
+})();
+</script>
+</body>
+</html>

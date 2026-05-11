@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from app.domain.auction.repository import AuctionRepository
+from app.domain.auction.repository import (
+    AuctionRepository,
+    PbancEnrichGroup,
+    PbancResolveTarget,
+)
 from app.domain.auction.schemas import (
     ASSET_TYPE_LABELS_KO,
     PROPERTY_CATEGORY_LABELS_KO,
@@ -572,6 +576,21 @@ class MockAuctionRepository(AuctionRepository):
 
     async def upsert_bid_result(self, auction_id: int, payload) -> None:
         return None
+
+    async def list_auctions_missing_pbanc_mng_no(
+        self, limit: int,
+    ) -> list[PbancResolveTarget]:
+        return []
+
+    async def update_pbanc_mng_no_batch(
+        self, mapping: list[tuple[int, str]],
+    ) -> int:
+        return 0
+
+    async def list_pbanc_groups_for_round_enrich(
+        self, limit: int,
+    ) -> list[PbancEnrichGroup]:
+        return []
 
     async def list_vehicles(
         self, q: VehicleListQuery

@@ -341,6 +341,7 @@ class AuctionUpsertItem(BaseModel):
     pbct_cdtn_no: int
     onbid_cltr_no: int | None = None
     onbid_pbanc_no: int | None = None
+    pbanc_mng_no: str | None = None
     pbct_no: int | None = None
     pbct_nsq: str | None = None
     pbct_sn: str | None = None

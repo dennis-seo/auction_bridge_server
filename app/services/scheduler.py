@@ -61,6 +61,42 @@ async def run_daily_onbid_ingest() -> dict:
         "by_prpt_div": stats.by_prpt_div,
     }
 
+    # 1.5a) D안 Phase A — pbanc_mng_no 매핑 해결
+    if settings.SCHEDULER_PBANC_RESOLVE_LIMIT > 0:
+        logger.info(
+            "Pbanc mapping resolve start (limit=%d).",
+            settings.SCHEDULER_PBANC_RESOLVE_LIMIT,
+        )
+        pa = await service.enrich_pbanc_mng_no(
+            limit=settings.SCHEDULER_PBANC_RESOLVE_LIMIT,
+        )
+        logger.info(
+            "Pbanc mapping resolve done — targeted=%d resolved=%d failed=%d api_calls=%d",
+            pa.targeted, pa.enriched, pa.failed, pa.api_calls,
+        )
+        result["pbanc_resolve"] = {
+            "targeted": pa.targeted, "resolved": pa.enriched,
+            "failed": pa.failed, "api_calls": pa.api_calls,
+        }
+
+    # 1.5b) D안 Phase B — 공고 단위 누락 회차 보강
+    if settings.SCHEDULER_PBANC_ENRICH_LIMIT > 0:
+        logger.info(
+            "Missing rounds enrich start (limit=%d).",
+            settings.SCHEDULER_PBANC_ENRICH_LIMIT,
+        )
+        pb = await service.enrich_missing_rounds_via_pbanc(
+            limit=settings.SCHEDULER_PBANC_ENRICH_LIMIT,
+        )
+        logger.info(
+            "Missing rounds enrich done — targeted=%d enriched=%d failed=%d api_calls=%d",
+            pb.targeted, pb.enriched, pb.failed, pb.api_calls,
+        )
+        result["pbanc_enrich"] = {
+            "targeted": pb.targeted, "enriched": pb.enriched,
+            "failed": pb.failed, "api_calls": pb.api_calls,
+        }
+
     # 2) #8 입찰결과목록 일괄 보강
     if settings.SCHEDULER_BID_RESULT_LIST_MAX_PAGES > 0:
         logger.info(

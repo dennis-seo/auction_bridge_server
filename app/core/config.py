@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     SCHEDULER_MOVABLE_IMAGE_LIMIT: int = 50  # 동산 사진 (#5)
     # #7 입찰정보 보강 — 매물별 1콜, 일 1000건 한도 안에서
     SCHEDULER_BID_INFO_LIMIT: int = 100
+    # D안 — 공고 API 체인으로 누락 회차 보강
+    # Phase A: pbanc_mng_no 매핑 해결 (active 매물 중 NULL인 것 N건 처리)
+    SCHEDULER_PBANC_RESOLVE_LIMIT: int = 200
+    # Phase B: 공고 단위 회차 보강 (해결된 pbanc_mng_no 그룹 N개 처리)
+    SCHEDULER_PBANC_ENRICH_LIMIT: int = 100
 
     # Cloud Scheduler → Cloud Run 인증 (OIDC)
     CRON_SERVICE_ACCOUNT_EMAIL: str = ""     # Cloud Scheduler가 사용하는 SA 이메일

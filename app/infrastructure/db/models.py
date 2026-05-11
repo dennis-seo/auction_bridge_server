@@ -68,6 +68,7 @@ class AuctionORM(Base):
     pbct_cdtn_no: Mapped[int | None] = mapped_column(BigInteger)
     onbid_cltr_no: Mapped[int | None] = mapped_column(BigInteger)
     onbid_pbanc_no: Mapped[int | None] = mapped_column(BigInteger)
+    pbanc_mng_no: Mapped[str | None] = mapped_column(String(40))
     pbct_no: Mapped[int | None] = mapped_column(BigInteger)
     pbct_nsq: Mapped[str | None] = mapped_column(String(3))
     pbct_sn: Mapped[str | None] = mapped_column(String(5))

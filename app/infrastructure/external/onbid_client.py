@@ -241,6 +241,65 @@ class OnbidClient:
         }
         return await self._request_single(url, params)
 
+    # ---------- 공고 (D안 — 누락 회차 보강용) ----------
+    async def list_announcements(
+        self,
+        *,
+        cltr_type_cd: str,
+        prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
+        bid_prd_ymd_start: str | None = None,
+        bid_prd_ymd_end: str | None = None,
+        opbd_dt_start: str | None = None,
+        opbd_dt_end: str | None = None,
+        page_no: int = 1,
+        num_of_rows: int = 500,
+    ) -> OnbidPage:
+        """공고목록 (#15 getPbancList2) — onbid_pbanc_no ↔ pbanc_mng_no 매핑 확보용.
+
+        opbdDt 또는 bidPrdYmd 중 적어도 하나는 지정해야 결과가 나온다.
+        - opbdDt: 개찰일 범위 (yyyyMMdd) — 필수 명목, 미래 회차 검색 시 빈 결과
+        - bidPrdYmd: 입찰기간 범위 (yyyyMMdd) — 임박 회차 검색에 유리
+        """
+        url = f"{self._base_url}/OnbidPbancListSrvc2/getPbancList2"
+        params: dict[str, Any] = {
+            "serviceKey": self._service_key,
+            "resultType": "json",
+            "pageNo": page_no,
+            "numOfRows": num_of_rows,
+            "cltrTypeCd": cltr_type_cd,
+            "prptDivCd": _join_codes(prpt_div_cd),
+        }
+        if opbd_dt_start:
+            params["opbdDtStart"] = opbd_dt_start
+        if opbd_dt_end:
+            params["opbdDtEnd"] = opbd_dt_end
+        if bid_prd_ymd_start:
+            params["bidPrdYmdStart"] = bid_prd_ymd_start
+        if bid_prd_ymd_end:
+            params["bidPrdYmdEnd"] = bid_prd_ymd_end
+        return await self._request_list(url, params, page_no=page_no, num_of_rows=num_of_rows)
+
+    async def get_announcement_cltrs(
+        self,
+        *,
+        pbanc_mng_no: str,
+        page_no: int = 1,
+        num_of_rows: int = 500,
+    ) -> OnbidPage:
+        """공고상세 물건정보 (#18 getPbancCltrInf2) — 한 공고의 모든 (cltr × 회차) 반환.
+
+        getRlstCltrList2가 가리는 임박 회차(D-7 등)도 포함되어 응답에 들어온다.
+        """
+        url = f"{self._base_url}/OnbidPbancCltrDtlSrvc2/getPbancCltrInf2"
+        params = {
+            "serviceKey": self._service_key,
+            "resultType": "json",
+            "pageNo": page_no,
+            "numOfRows": num_of_rows,
+            "pbancMngNo": pbanc_mng_no,
+        }
+        return await self._request_list(url, params, page_no=page_no, num_of_rows=num_of_rows)
+
     # ---------- internals ----------
     async def _request_list(
         self, url: str, params: dict[str, Any], *, page_no: int, num_of_rows: int

@@ -5,8 +5,10 @@
   - 동산   물건목록  : OnbidMvastListSrvc2 / getMvastCltrList2
   - 차량   물건목록  : OnbidCarListSrvc2   / getCarCltrList2
   - 부동산 물건상세  : OnbidRlstDtlSrvc2   / getRlstDtlInf2
+  - 동산   물건상세  : OnbidMvastDtlSrvc2  / getMvastDtlInf2
   - 물건상세 입찰정보: OnbidCltrBidDtlSrvc2/ getCltrBidInf2
   - 입찰결과목록     : OnbidCltrBidRsltListSrvc2/ getCltrBidRsltList2
+  - 입찰결과상세     : OnbidCltrBidRsltDtlSrvc2 / getCltrBidRsltDtl2
 
 응답은 JSON으로 강제(`resultType=json`).
 """
@@ -50,6 +52,15 @@ _LIST_PATHS: dict[OnbidAssetService, tuple[str, str]] = {
     OnbidAssetService.REALTY:  ("OnbidRlstListSrvc2",  "getRlstCltrList2"),
     OnbidAssetService.MOVABLE: ("OnbidMvastListSrvc2", "getMvastCltrList2"),
     OnbidAssetService.VEHICLE: ("OnbidCarListSrvc2",   "getCarCltrList2"),
+}
+
+
+# 입찰결과목록(#8) 호출 시 사용하는 cltrTypeCd (물건유형코드 — 목록조회의 prptDivCd와 별개)
+#   0001=부동산, 0002=자동차, 0003=동산
+CLTR_TYPE_CD: dict[OnbidAssetService, str] = {
+    OnbidAssetService.REALTY:  "0001",
+    OnbidAssetService.VEHICLE: "0002",
+    OnbidAssetService.MOVABLE: "0003",
 }
 
 
@@ -158,6 +169,19 @@ class OnbidClient:
     ) -> dict[str, Any]:
         """부동산 물건상세."""
         url = f"{self._base_url}/OnbidRlstDtlSrvc2/getRlstDtlInf2"
+        params = {
+            "serviceKey": self._service_key,
+            "resultType": "json",
+            "cltrMngNo": cltr_mng_no,
+            "pbctCdtnNo": str(pbct_cdtn_no),
+        }
+        return await self._request_single(url, params)
+
+    async def get_movable_detail(
+        self, *, cltr_mng_no: str, pbct_cdtn_no: int | str
+    ) -> dict[str, Any]:
+        """동산 물건상세 (#5). potoUrlList[].urlAdr 구조는 부동산과 동일."""
+        url = f"{self._base_url}/OnbidMvastDtlSrvc2/getMvastDtlInf2"
         params = {
             "serviceKey": self._service_key,
             "resultType": "json",

@@ -143,6 +143,9 @@ class AuctionORM(Base):
     image_urls: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, server_default="[]"
     )
+    bid_info: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
 
     correction_yn: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"

@@ -49,8 +49,16 @@ class Settings(BaseSettings):
     # has_more=false로 일찍 종료되는 카테고리가 많아 200~500건 수준.
     SCHEDULER_PAGES_PER_ASSET: int = 50      # 자산타입 × prpt_div_cd당 페이지 수
     SCHEDULER_NUM_OF_ROWS: int = 500         # 페이지당 행
-    SCHEDULER_BID_RESULT_LIMIT: int = 200    # 입찰결과 보강 1회 한도
-    SCHEDULER_IMAGE_LIMIT: int = 0           # 이미지 보강 1회 한도 (0=skip; quota 보존)
+    # #8 입찰결과목록 일괄 보강 (cltrTypeCd 3종 × 페이지)
+    SCHEDULER_BID_RESULT_LIST_DAYS: int = 2          # 개찰일자 lookback (어제~오늘 = 2)
+    SCHEDULER_BID_RESULT_LIST_MAX_PAGES: int = 20    # 자산타입별 최대 페이지
+    # #9 fallback (#8 매칭 누락분만 처리, 0이면 skip)
+    SCHEDULER_BID_RESULT_LIMIT: int = 50
+    # 이미지 보강 (0 = skip; quota 보존)
+    SCHEDULER_IMAGE_LIMIT: int = 100         # 부동산 사진 (#4)
+    SCHEDULER_MOVABLE_IMAGE_LIMIT: int = 50  # 동산 사진 (#5)
+    # #7 입찰정보 보강 — 매물별 1콜, 일 1000건 한도 안에서
+    SCHEDULER_BID_INFO_LIMIT: int = 100
 
     # Cloud Scheduler → Cloud Run 인증 (OIDC)
     CRON_SERVICE_ACCOUNT_EMAIL: str = ""     # Cloud Scheduler가 사용하는 SA 이메일

@@ -13,18 +13,26 @@ from typing import Any
 
 from app.domain.auction.repository import AuctionRepository
 from app.domain.auction.schemas import (
+    AnnouncementMeta,
     AssetType,
     AuctionSource,
     AuctionStatus,
     AuctionUpsertItem,
+    BidInfo,
+    BidMethods,
+    BidRestrictions,
+    BidTerms,
     MovableAttrs,
+    PreviousRoundBid,
     PropertyCategory,
     RealtyAttrs,
+    RoundBidSchedule,
     VehicleAttrs,
     VehicleCategory,
 )
 from app.infrastructure.external.kakao_geocoder import KakaoGeocoder
 from app.infrastructure.external.onbid_client import (
+    CLTR_TYPE_CD,
     OnbidAPIError,
     OnbidAssetService,
     OnbidClient,
@@ -495,6 +503,94 @@ def _split_amounts(s: Any) -> list[int]:
     return out
 
 
+def _iter_list_block(block: Any) -> list[dict[str, Any]]:
+    """Onbid 응답의 array 필드는 list / dict / None 모두 가능 — 통일."""
+    if block is None:
+        return []
+    if isinstance(block, list):
+        return [el for el in block if isinstance(el, dict)]
+    if isinstance(block, dict):
+        return [block]
+    return []
+
+
+def normalize_bid_info(raw: dict[str, Any]) -> BidInfo:
+    """#7 응답 dict → 정규화된 BidInfo 모델.
+
+    빈 응답이어도 BidInfo (모든 필드 default) 를 반환. 호출자는 `bid_info.raw`로
+    원본 보존을 확인할 수 있다.
+    """
+    if not isinstance(raw, dict):
+        return BidInfo()
+
+    methods = BidMethods(
+        collab_bid=parse_yn(raw.get("collbBidPsblYn")),
+        proxy_bid=parse_yn(raw.get("subtBidPsblYn")),
+        electronic_guarantee=parse_yn(raw.get("eltrGrprUseYn")),
+        deposit_substitute_doc=parse_yn(raw.get("tdpsSbtnDcmtYn")),
+        runner_up_application=parse_yn(raw.get("nrnkAplyPsblYn")),
+        multi_bid=parse_yn(raw.get("twtmGthrBidPsblYn")),
+        same_ip_bid=parse_yn(raw.get("smnsIpDpcnBidBlcktYn")),
+    )
+    terms = BidTerms(
+        deposit_text=str_or_none(raw.get("pbctTdpsCont")),
+        payment_method=str_or_none(raw.get("pcmtPayMtdCont")),
+        payment_term=str_or_none(raw.get("pcmtPayTermCont")),
+        bid_validity_criterion=str_or_none(raw.get("bidVldCrtrCont")),
+        participation_fee=parse_int(raw.get("ptctCmsn")),
+        failed_count_cumulative=parse_int(raw.get("usbdNft")),
+    )
+    restrictions = BidRestrictions(
+        qualification=str_or_none(raw.get("qlfcLmtCdtnCont")),
+        region=str_or_none(raw.get("rgnLmtCdtnCont")),
+        etc=str_or_none(raw.get("etcLmtCdtnCont")),
+    )
+    announcement = AnnouncementMeta(
+        pbanc_mng_no=str_or_none(raw.get("pbancMngNo")),
+        pbanc_name=str_or_none(raw.get("onbidPbancNm")),
+    )
+
+    previous_rounds = [
+        PreviousRoundBid(
+            pbct_nsq=str_or_none(el.get("pbctNsq")),
+            pbct_sn=str_or_none(el.get("pbctsn")),
+            opened_at=parse_dt(el.get("cltrOpbdDt")),
+            result_name=str_or_none(el.get("pbctStatNm")),
+            min_bid_price_text=str_or_none(el.get("lowstBidPrcIndctCont")),
+            winning_amount_text=str_or_none(el.get("scfbAmt")),
+            apsl_to_winning_ratio=parse_float(el.get("apslPrcCtrsLowstBidRto")),
+            lowest_to_winning_ratio=parse_float(el.get("frstCtrsLowstBidPrcRto")),
+        )
+        for el in _iter_list_block(raw.get("prcnBidClgList"))
+    ]
+
+    round_schedules = [
+        RoundBidSchedule(
+            bid_mng_no=str_or_none(el.get("bidMngNo")),
+            pbct_nsq=str_or_none(el.get("pbctNsq")),
+            pbct_sn=str_or_none(el.get("pbctsn")),
+            bid_div=str_or_none(el.get("bidDivNm")),
+            bid_begin_at=parse_dt(el.get("cltrBidBgngDt")),
+            bid_end_at=parse_dt(el.get("cltrBidEndDt")),
+            opened_at=parse_dt(el.get("cltrOpbdDt")),
+            open_place=str_or_none(el.get("pbctOpbdPlcCont")),
+            min_bid_price_text=str_or_none(el.get("lowstBidPrcIndctCont")),
+            sale_decision_at=parse_dt(el.get("cltrDodispDt")),
+        )
+        for el in _iter_list_block(raw.get("cseqBidInfClgList"))
+    ]
+
+    return BidInfo(
+        methods=methods,
+        terms=terms,
+        restrictions=restrictions,
+        announcement=announcement,
+        previous_rounds=previous_rounds,
+        round_schedules=round_schedules,
+        raw=raw,
+    )
+
+
 def normalize_bid_result(raw: dict[str, Any]) -> BidResultPayload | None:
     cltr = (raw.get("cltrMngNo") or "").strip()
     pbct = parse_int(raw.get("pbctCdtnNo"))
@@ -704,28 +800,174 @@ class OnbidIngestService:
         return stats
 
     async def enrich_realty_image_urls(self, *, limit: int = 50) -> EnrichStats:
-        """이미지가 비어 있는 부동산 N건에 대해 상세 API를 호출해 image_urls 보강.
+        """이미지가 비어 있는 부동산 N건에 대해 상세 API(#4)를 호출해 image_urls 보강.
 
         일일 쿼터 1000/서비스 고려해 호출자가 limit 제어. 부분 실패는 카운트만.
         """
+        return await self._enrich_image_urls(
+            limit=limit,
+            list_fn=self._repo.list_realty_missing_images,
+            detail_fn=self._client.get_realty_detail,
+            asset_label="realty",
+        )
+
+    async def enrich_movable_image_urls(self, *, limit: int = 50) -> EnrichStats:
+        """이미지가 비어 있는 동산 N건에 대해 상세 API(#5)를 호출해 image_urls 보강."""
+        return await self._enrich_image_urls(
+            limit=limit,
+            list_fn=self._repo.list_movable_missing_images,
+            detail_fn=self._client.get_movable_detail,
+            asset_label="movable",
+        )
+
+    async def enrich_bid_info(self, *, limit: int = 50) -> EnrichStats:
+        """#7 입찰정보로 매물 1건당 1콜 → 정규화된 BidInfo dict를 auctions.bid_info에 저장.
+
+        원본 raw는 `bid_info.raw`에 보존. scheduled/ongoing 매물 중 bid_info가
+        비어있는 N건만 처리. 일일 1,000/일 한도 안에서 호출자가 limit 제어.
+        """
         stats = EnrichStats()
-        targets = await self._repo.list_realty_missing_images(limit=limit)
+        targets = await self._repo.list_auctions_missing_bid_info(limit=limit)
         stats.targeted = len(targets)
         for auction_id, cltr, pbct in targets:
             stats.api_calls += 1
             try:
-                detail = await self._client.get_realty_detail(
-                    cltr_mng_no=cltr, pbct_cdtn_no=pbct
+                detail = await self._client.get_bid_info(
+                    cltr_mng_no=cltr, pbct_cdtn_no=pbct,
                 )
             except OnbidQuotaExceeded as e:
-                logger.warning("enrich quota exceeded — stopping: %s", e)
+                logger.warning("bid_info enrich quota exceeded — stopping: %s", e)
                 break
             except OnbidAPIError as e:
-                logger.info("enrich skip auction_id=%d: %s", auction_id, e)
+                logger.info(
+                    "bid_info enrich skip auction_id=%d: %s", auction_id, e,
+                )
+                stats.failed += 1
+                continue
+            if not detail:
+                stats.failed += 1
+                continue
+            bid_info = normalize_bid_info(detail)
+            await self._repo.update_bid_info(
+                auction_id, bid_info.model_dump(mode="json"),
+            )
+            stats.enriched += 1
+        return stats
+
+    async def _enrich_image_urls(
+        self,
+        *,
+        limit: int,
+        list_fn,
+        detail_fn,
+        asset_label: str,
+    ) -> EnrichStats:
+        stats = EnrichStats()
+        targets = await list_fn(limit=limit)
+        stats.targeted = len(targets)
+        for auction_id, cltr, pbct in targets:
+            stats.api_calls += 1
+            try:
+                detail = await detail_fn(cltr_mng_no=cltr, pbct_cdtn_no=pbct)
+            except OnbidQuotaExceeded as e:
+                logger.warning(
+                    "%s image enrich quota exceeded — stopping: %s", asset_label, e
+                )
+                break
+            except OnbidAPIError as e:
+                logger.info(
+                    "%s image enrich skip auction_id=%d: %s", asset_label, auction_id, e
+                )
                 stats.failed += 1
                 continue
             urls = extract_image_urls(detail)
             if urls:
                 await self._repo.update_image_urls(auction_id, urls)
                 stats.enriched += 1
+        return stats
+
+    async def enrich_bid_results_by_list(
+        self,
+        *,
+        days_lookback: int = 2,
+        num_of_rows: int = 100,
+        max_pages_per_combo: int = 20,
+        prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
+    ) -> EnrichStats:
+        """#8 입찰결과목록으로 최근 개찰된 매물 결과를 일괄 보강.
+
+        cltrTypeCd(부동산/자동차/동산) × prptDivCd로 한 번에 100건씩 페이지 순회.
+        결과는 DB ongoing/scheduled 매물과 (cltr_mng_no, pbct_cdtn_no)로 매칭해서
+        upsert. #9 호출당 1건 보강 대비 호출 수 대폭 절감.
+
+        days_lookback=2면 어제~오늘 개찰 범위. 운영 권장 안전 마진.
+        """
+        stats = EnrichStats()
+        today = datetime.now(KST).date()
+        start = today - timedelta(days=max(0, days_lookback - 1))
+        opbd_start = start.strftime("%Y%m%d")
+        opbd_end = today.strftime("%Y%m%d")
+
+        for asset in OnbidAssetService:
+            cltr_type_cd = CLTR_TYPE_CD[asset]
+            page_no = 1
+            while page_no <= max_pages_per_combo:
+                stats.api_calls += 1
+                try:
+                    page = await self._client.list_bid_results(
+                        cltr_type_cd=cltr_type_cd,
+                        prpt_div_cd=prpt_div_cd,
+                        opbd_dt_start=opbd_start,
+                        opbd_dt_end=opbd_end,
+                        page_no=page_no,
+                        num_of_rows=num_of_rows,
+                    )
+                except OnbidQuotaExceeded as e:
+                    logger.warning(
+                        "bid_result list quota exceeded — stopping: %s", e
+                    )
+                    return stats
+                except OnbidAPIError as e:
+                    logger.info(
+                        "bid_result list error asset=%s page=%d: %s",
+                        asset.value, page_no, e,
+                    )
+                    break
+
+                if not page.items:
+                    break
+                stats.targeted += len(page.items)
+
+                # 결과 → 정규화 + 키 추출
+                payloads: list[BidResultPayload] = []
+                keys: list[tuple[str, int]] = []
+                for raw in page.items:
+                    payload = normalize_bid_result(raw)
+                    if payload is None:
+                        continue
+                    payloads.append(payload)
+                    keys.append((payload.cltr_mng_no, payload.pbct_cdtn_no))
+
+                if not payloads:
+                    if not page.has_more:
+                        break
+                    page_no += 1
+                    continue
+
+                id_map = await self._repo.lookup_active_auction_ids(keys)
+                for payload in payloads:
+                    aid = id_map.get((payload.cltr_mng_no, payload.pbct_cdtn_no))
+                    if aid is None:
+                        continue
+                    await self._repo.upsert_bid_result(aid, payload)
+                    stats.enriched += 1
+
+                logger.info(
+                    "bid_result list asset=%s page=%d items=%d matched=%d",
+                    asset.value, page_no, len(page.items),
+                    sum(1 for p in payloads if (p.cltr_mng_no, p.pbct_cdtn_no) in id_map),
+                )
+                if not page.has_more:
+                    break
+                page_no += 1
         return stats

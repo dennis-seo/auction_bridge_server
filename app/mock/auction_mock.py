@@ -23,6 +23,12 @@ from app.domain.auction.schemas import (
     SourceStat,
     VehicleCategory,
     VehicleDetails,
+    VehicleFacetCount,
+    VehicleListItem,
+    VehicleListQuery,
+    VehicleMakerCount,
+    VehicleStatsResponse,
+    VehicleYearBucket,
 )
 
 
@@ -257,6 +263,115 @@ _MOCK_ITEMS: list[AuctionListItem] = [
     ),
 ]
 
+# 자동차 전용 리스트/통계 mock — VehicleListItem 직접 보관
+_MOCK_VEHICLES: list[VehicleListItem] = [
+    VehicleListItem(
+        id=2001, source=AuctionSource.ONBID, status=AuctionStatus.ONGOING,
+        title="현대 그랜저 IG 2.4 (mock)",
+        region_sido="서울특별시", region_sigungu="강남구",
+        appraisal_price=18_000_000, min_bid_price=14_400_000,
+        bid_begin_at=_NOW - timedelta(days=1),
+        bid_end_at=_NOW + timedelta(days=6),
+        fee_rate=80.0, failed_count=0,
+        vehicle_category=VehicleCategory.SEDAN,
+        maker="현대자동차", model_name="그랜저 IG", year_model="2019",
+        mileage_km=86_500, displacement_cc=2359,
+        transmission="자동", fuel="휘발유",
+    ),
+    VehicleListItem(
+        id=2002, source=AuctionSource.ONBID, status=AuctionStatus.SCHEDULED,
+        title="기아 K5 DL3 (mock)",
+        region_sido="경기도", region_sigungu="성남시 분당구",
+        appraisal_price=22_000_000, min_bid_price=17_600_000,
+        bid_begin_at=_NOW - timedelta(hours=12),
+        bid_end_at=_NOW + timedelta(days=8),
+        fee_rate=80.0, failed_count=0,
+        vehicle_category=VehicleCategory.SEDAN,
+        maker="기아", model_name="K5 DL3", year_model="2022",
+        mileage_km=24_300, displacement_cc=1999,
+        transmission="자동", fuel="휘발유",
+    ),
+    VehicleListItem(
+        id=2003, source=AuctionSource.ONBID, status=AuctionStatus.ONGOING,
+        title="현대 포터2 (mock)",
+        region_sido="부산광역시", region_sigungu="해운대구",
+        appraisal_price=11_000_000, min_bid_price=8_800_000,
+        bid_begin_at=_NOW - timedelta(days=3),
+        bid_end_at=_NOW + timedelta(days=4),
+        fee_rate=80.0, failed_count=1,
+        vehicle_category=VehicleCategory.TRUCK,
+        maker="현대자동차", model_name="포터2", year_model="2017",
+        mileage_km=152_800, displacement_cc=2497,
+        transmission="수동", fuel="경유",
+    ),
+    VehicleListItem(
+        id=2004, source=AuctionSource.ONBID, status=AuctionStatus.ONGOING,
+        title="기아 카니발 KA4 (mock)",
+        region_sido="인천광역시", region_sigungu="연수구",
+        appraisal_price=34_000_000, min_bid_price=27_200_000,
+        bid_begin_at=_NOW - timedelta(days=2),
+        bid_end_at=_NOW + timedelta(days=5),
+        fee_rate=80.0, failed_count=0,
+        vehicle_category=VehicleCategory.VAN,
+        maker="기아", model_name="카니발 KA4", year_model="2023",
+        mileage_km=12_900, displacement_cc=2199,
+        transmission="자동", fuel="경유",
+    ),
+    VehicleListItem(
+        id=2005, source=AuctionSource.ONBID, status=AuctionStatus.SCHEDULED,
+        title="르노삼성 SM6 LPe (mock)",
+        region_sido="대구광역시", region_sigungu="수성구",
+        appraisal_price=14_500_000, min_bid_price=11_600_000,
+        bid_begin_at=_NOW - timedelta(hours=6),
+        bid_end_at=_NOW + timedelta(days=9),
+        fee_rate=80.0, failed_count=2,
+        vehicle_category=VehicleCategory.SEDAN,
+        maker="르노삼성", model_name="SM6 LPe", year_model="2018",
+        mileage_km=98_400, displacement_cc=1998,
+        transmission="자동", fuel="LPG",
+    ),
+    VehicleListItem(
+        id=2006, source=AuctionSource.ONBID, status=AuctionStatus.ONGOING,
+        title="테슬라 모델3 SR+ (mock)",
+        region_sido="서울특별시", region_sigungu="송파구",
+        appraisal_price=42_000_000, min_bid_price=33_600_000,
+        bid_begin_at=_NOW - timedelta(hours=2),
+        bid_end_at=_NOW + timedelta(days=10),
+        fee_rate=80.0, failed_count=0,
+        vehicle_category=VehicleCategory.SEDAN,
+        maker="테슬라", model_name="모델3 SR+", year_model="2021",
+        mileage_km=38_700, displacement_cc=None,
+        transmission="자동", fuel="전기",
+    ),
+    VehicleListItem(
+        id=2007, source=AuctionSource.ONBID, status=AuctionStatus.ONGOING,
+        title="혼다 PCX 125 (mock)",
+        region_sido="서울특별시", region_sigungu="마포구",
+        appraisal_price=2_400_000, min_bid_price=1_920_000,
+        bid_begin_at=_NOW - timedelta(days=5),
+        bid_end_at=_NOW + timedelta(days=2),
+        fee_rate=80.0, failed_count=1,
+        vehicle_category=VehicleCategory.MOTORCYCLE,
+        maker="혼다", model_name="PCX 125", year_model="2020",
+        mileage_km=8_500, displacement_cc=124,
+        transmission="자동", fuel="휘발유",
+    ),
+    VehicleListItem(
+        id=2008, source=AuctionSource.ONBID, status=AuctionStatus.ONGOING,
+        title="현대 스타리아 (mock)",
+        region_sido="경기도", region_sigungu="수원시 영통구",
+        appraisal_price=29_000_000, min_bid_price=23_200_000,
+        bid_begin_at=_NOW - timedelta(days=4),
+        bid_end_at=_NOW + timedelta(days=3),
+        fee_rate=80.0, failed_count=0,
+        vehicle_category=VehicleCategory.VAN,
+        maker="현대자동차", model_name="스타리아", year_model="2022",
+        mileage_km=42_310, displacement_cc=2199,
+        transmission="자동", fuel="경유",
+    ),
+]
+
+
 _MOCK_ASSET_COUNTS: dict[AssetType, int] = {
     AssetType.REALTY: 2890,
     AssetType.VEHICLE: 612,
@@ -425,6 +540,26 @@ class MockAuctionRepository(AuctionRepository):
     ) -> list[tuple[int, str, int]]:
         return []
 
+    async def list_movable_missing_images(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        return []
+
+    async def list_auctions_missing_bid_info(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        return []
+
+    async def update_bid_info(
+        self, auction_id: int, bid_info: dict
+    ) -> None:
+        return None
+
+    async def lookup_active_auction_ids(
+        self, keys: list[tuple[str, int]]
+    ) -> dict[tuple[str, int], int]:
+        return {}
+
     async def update_image_urls(
         self, auction_id: int, image_urls: list[str]
     ) -> None:
@@ -437,3 +572,107 @@ class MockAuctionRepository(AuctionRepository):
 
     async def upsert_bid_result(self, auction_id: int, payload) -> None:
         return None
+
+    async def list_vehicles(
+        self, q: VehicleListQuery
+    ) -> tuple[list[VehicleListItem], int]:
+        def _matches(v: VehicleListItem) -> bool:
+            if q.vehicle_category is not None and v.vehicle_category != q.vehicle_category:
+                return False
+            if q.maker and (v.maker is None or q.maker.lower() not in v.maker.lower()):
+                return False
+            if q.fuel and (v.fuel is None or q.fuel.lower() not in v.fuel.lower()):
+                return False
+            if q.transmission and (
+                v.transmission is None
+                or q.transmission.lower() not in v.transmission.lower()
+            ):
+                return False
+            if q.year_model_min and (v.year_model is None or v.year_model < q.year_model_min):
+                return False
+            if q.year_model_max and (v.year_model is None or v.year_model > q.year_model_max):
+                return False
+            if q.mileage_km_min is not None and (
+                v.mileage_km is None or v.mileage_km < q.mileage_km_min
+            ):
+                return False
+            if q.mileage_km_max is not None and (
+                v.mileage_km is None or v.mileage_km > q.mileage_km_max
+            ):
+                return False
+            if q.displacement_cc_min is not None and (
+                v.displacement_cc is None or v.displacement_cc < q.displacement_cc_min
+            ):
+                return False
+            if q.displacement_cc_max is not None and (
+                v.displacement_cc is None or v.displacement_cc > q.displacement_cc_max
+            ):
+                return False
+            if q.status is not None and v.status != q.status:
+                return False
+            if q.region_sido and v.region_sido != q.region_sido:
+                return False
+            return True
+
+        matched = [v for v in _MOCK_VEHICLES if _matches(v)]
+        matched.sort(
+            key=lambda v: (
+                v.bid_begin_at is None,
+                # bid_begin_at DESC + id DESC tiebreaker
+                -(v.bid_begin_at.timestamp() if v.bid_begin_at else 0),
+                -v.id,
+            )
+        )
+        sliced = matched[q.offset : q.offset + q.limit]
+        return sliced, len(matched)
+
+    async def get_vehicle_stats(self) -> VehicleStatsResponse:
+        active = [
+            v for v in _MOCK_VEHICLES
+            if v.status in (AuctionStatus.SCHEDULED, AuctionStatus.ONGOING)
+        ]
+
+        def _facet_counts(key_fn) -> list[tuple[str, int]]:
+            buckets: dict[str, int] = {}
+            for v in active:
+                k = key_fn(v)
+                if k is None or k == "":
+                    continue
+                buckets[k] = buckets.get(k, 0) + 1
+            return sorted(buckets.items(), key=lambda kv: -kv[1])
+
+        cat_buckets: dict[VehicleCategory, int] = {}
+        for v in active:
+            cat_buckets[v.vehicle_category] = cat_buckets.get(v.vehicle_category, 0) + 1
+
+        return VehicleStatsResponse(
+            total=len(active),
+            by_category=[
+                VehicleFacetCount(
+                    key=cat.value,
+                    label=VEHICLE_CATEGORY_LABELS_KO.get(cat),
+                    count=cnt,
+                )
+                for cat, cnt in cat_buckets.items()
+            ],
+            by_fuel=[
+                VehicleFacetCount(key=k, label=k, count=c)
+                for k, c in _facet_counts(lambda v: v.fuel)
+            ],
+            by_transmission=[
+                VehicleFacetCount(key=k, label=k, count=c)
+                for k, c in _facet_counts(lambda v: v.transmission)
+            ],
+            by_maker_top=[
+                VehicleMakerCount(maker=k, count=c)
+                for k, c in _facet_counts(lambda v: v.maker)[:20]
+            ],
+            by_year_model=sorted(
+                [
+                    VehicleYearBucket(year_model=k, count=c)
+                    for k, c in _facet_counts(lambda v: v.year_model)
+                ],
+                key=lambda b: b.year_model,
+                reverse=True,
+            ),
+        )

@@ -31,6 +31,12 @@ from app.domain.auction.schemas import (
     SourceStat,
     VehicleCategory,
     VehicleDetails,
+    VehicleFacetCount,
+    VehicleListItem,
+    VehicleListQuery,
+    VehicleMakerCount,
+    VehicleStatsResponse,
+    VehicleYearBucket,
 )
 from app.infrastructure.db.models import (
     AuctionBidResultORM,
@@ -491,11 +497,21 @@ class DBAuctionRepository(AuctionRepository):
     async def list_realty_missing_images(
         self, limit: int
     ) -> list[tuple[int, str, int]]:
+        return await self._list_missing_images(AssetType.REALTY, limit)
+
+    async def list_movable_missing_images(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        return await self._list_missing_images(AssetType.MOVABLE, limit)
+
+    async def _list_missing_images(
+        self, asset_type: AssetType, limit: int
+    ) -> list[tuple[int, str, int]]:
         async with self._session_factory() as session:
             rows = (await session.execute(
                 select(AuctionORM.id, AuctionORM.cltr_mng_no, AuctionORM.pbct_cdtn_no)
                 .where(
-                    AuctionORM.asset_type == AssetType.REALTY.value,
+                    AuctionORM.asset_type == asset_type.value,
                     AuctionORM.cltr_mng_no.is_not(None),
                     AuctionORM.pbct_cdtn_no.is_not(None),
                     func.jsonb_array_length(AuctionORM.image_urls) == 0,
@@ -505,6 +521,34 @@ class DBAuctionRepository(AuctionRepository):
             )).all()
         return [(r.id, r.cltr_mng_no, r.pbct_cdtn_no) for r in rows]
 
+    async def lookup_active_auction_ids(
+        self, keys: list[tuple[str, int]]
+    ) -> dict[tuple[str, int], int]:
+        if not keys:
+            return {}
+        cltr_set = {k[0] for k in keys}
+        pbct_set = {k[1] for k in keys}
+        async with self._session_factory() as session:
+            rows = (await session.execute(
+                select(
+                    AuctionORM.id, AuctionORM.cltr_mng_no, AuctionORM.pbct_cdtn_no,
+                )
+                .where(
+                    AuctionORM.source == AuctionSource.ONBID.value,
+                    AuctionORM.status.in_(_ACTIVE_STATUSES),
+                    AuctionORM.cltr_mng_no.in_(cltr_set),
+                    AuctionORM.pbct_cdtn_no.in_(pbct_set),
+                )
+            )).all()
+        # DB 후보 중 정확한 (cltr, pbct) 짝만 채택
+        wanted = set(keys)
+        out: dict[tuple[str, int], int] = {}
+        for r in rows:
+            key = (r.cltr_mng_no, r.pbct_cdtn_no)
+            if key in wanted:
+                out[key] = r.id
+        return out
+
     async def update_image_urls(
         self, auction_id: int, image_urls: list[str]
     ) -> None:
@@ -513,6 +557,36 @@ class DBAuctionRepository(AuctionRepository):
                 update(AuctionORM)
                 .where(AuctionORM.id == auction_id)
                 .values(image_urls=image_urls)
+            )
+            await session.commit()
+
+    # ---------- bid info enrichment (#7) ----------
+    async def list_auctions_missing_bid_info(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        """active 매물 중 bid_info가 빈 객체(`{}`)인 N건."""
+        async with self._session_factory() as session:
+            rows = (await session.execute(
+                select(AuctionORM.id, AuctionORM.cltr_mng_no, AuctionORM.pbct_cdtn_no)
+                .where(
+                    AuctionORM.status.in_(_ACTIVE_STATUSES),
+                    AuctionORM.cltr_mng_no.is_not(None),
+                    AuctionORM.pbct_cdtn_no.is_not(None),
+                    AuctionORM.bid_info == {},
+                )
+                .order_by(AuctionORM.id)
+                .limit(limit)
+            )).all()
+        return [(r.id, r.cltr_mng_no, r.pbct_cdtn_no) for r in rows]
+
+    async def update_bid_info(
+        self, auction_id: int, bid_info: dict
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(AuctionORM)
+                .where(AuctionORM.id == auction_id)
+                .values(bid_info=bid_info)
             )
             await session.commit()
 
@@ -595,6 +669,176 @@ class DBAuctionRepository(AuctionRepository):
                     )
                 )
             await session.commit()
+
+    # ---------- vehicle list / stats ----------
+    async def list_vehicles(
+        self, q: VehicleListQuery
+    ) -> tuple[list[VehicleListItem], int]:
+        v = AuctionVehicleDetailsORM
+        a = AuctionORM
+
+        conditions = [a.asset_type == AssetType.VEHICLE.value]
+        if q.vehicle_category is not None:
+            conditions.append(v.vehicle_category == q.vehicle_category.value)
+        if q.maker:
+            conditions.append(v.maker.ilike(f"%{q.maker}%"))
+        if q.fuel:
+            conditions.append(v.fuel.ilike(f"%{q.fuel}%"))
+        if q.transmission:
+            conditions.append(v.transmission.ilike(f"%{q.transmission}%"))
+        if q.year_model_min:
+            conditions.append(v.year_model >= q.year_model_min)
+        if q.year_model_max:
+            conditions.append(v.year_model <= q.year_model_max)
+        if q.mileage_km_min is not None:
+            conditions.append(v.mileage_km >= q.mileage_km_min)
+        if q.mileage_km_max is not None:
+            conditions.append(v.mileage_km <= q.mileage_km_max)
+        if q.displacement_cc_min is not None:
+            conditions.append(v.displacement_cc >= q.displacement_cc_min)
+        if q.displacement_cc_max is not None:
+            conditions.append(v.displacement_cc <= q.displacement_cc_max)
+        if q.status is not None:
+            conditions.append(a.status == q.status.value)
+        if q.region_sido:
+            conditions.append(a.region_sido == q.region_sido)
+
+        list_stmt = (
+            select(
+                a.id, a.source, a.status, a.title,
+                a.region_sido, a.region_sigungu,
+                a.appraisal_price, a.min_bid_price,
+                a.bid_begin_at, a.bid_end_at, a.fee_rate,
+                a.failed_count, a.thumbnail_url,
+                v.vehicle_category, v.maker, v.model_name, v.year_model,
+                v.mileage_km, v.displacement_cc, v.transmission, v.fuel,
+            )
+            .join(v, v.auction_id == a.id)
+            .where(*conditions)
+            .order_by(a.bid_begin_at.desc().nullslast(), a.id.desc())
+            .offset(q.offset)
+            .limit(q.limit)
+        )
+        count_stmt = (
+            select(func.count())
+            .select_from(a)
+            .join(v, v.auction_id == a.id)
+            .where(*conditions)
+        )
+
+        async with self._session_factory() as session:
+            rows = (await session.execute(list_stmt)).all()
+            total = (await session.execute(count_stmt)).scalar_one()
+
+        items = [
+            VehicleListItem(
+                id=r.id,
+                source=r.source,
+                status=r.status,
+                title=r.title,
+                region_sido=r.region_sido,
+                region_sigungu=r.region_sigungu,
+                appraisal_price=r.appraisal_price,
+                min_bid_price=r.min_bid_price,
+                bid_begin_at=r.bid_begin_at,
+                bid_end_at=r.bid_end_at,
+                fee_rate=float(r.fee_rate) if r.fee_rate is not None else None,
+                failed_count=r.failed_count or 0,
+                thumbnail_url=r.thumbnail_url,
+                vehicle_category=r.vehicle_category,
+                maker=r.maker,
+                model_name=r.model_name,
+                year_model=r.year_model,
+                mileage_km=r.mileage_km,
+                displacement_cc=r.displacement_cc,
+                transmission=r.transmission,
+                fuel=r.fuel,
+            )
+            for r in rows
+        ]
+        return items, int(total)
+
+    async def get_vehicle_stats(self) -> VehicleStatsResponse:
+        v = AuctionVehicleDetailsORM
+        a = AuctionORM
+        active = a.status.in_(_ACTIVE_STATUSES)
+        is_vehicle = a.asset_type == AssetType.VEHICLE.value
+
+        async with self._session_factory() as session:
+            total = (await session.execute(
+                select(func.count(a.id))
+                .join(v, v.auction_id == a.id)
+                .where(active, is_vehicle)
+            )).scalar_one()
+
+            cat_rows = (await session.execute(
+                select(v.vehicle_category, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle)
+                .group_by(v.vehicle_category)
+            )).all()
+
+            fuel_rows = (await session.execute(
+                select(v.fuel, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle, v.fuel.is_not(None), v.fuel != "")
+                .group_by(v.fuel)
+                .order_by(func.count().desc())
+            )).all()
+
+            trans_rows = (await session.execute(
+                select(v.transmission, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle, v.transmission.is_not(None), v.transmission != "")
+                .group_by(v.transmission)
+                .order_by(func.count().desc())
+            )).all()
+
+            maker_rows = (await session.execute(
+                select(v.maker, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle, v.maker.is_not(None), v.maker != "")
+                .group_by(v.maker)
+                .order_by(func.count().desc())
+                .limit(20)
+            )).all()
+
+            year_rows = (await session.execute(
+                select(v.year_model, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle, v.year_model.is_not(None), v.year_model != "")
+                .group_by(v.year_model)
+                .order_by(v.year_model.desc())
+            )).all()
+
+        by_category = [
+            VehicleFacetCount(
+                key=cat.value,
+                label=VEHICLE_CATEGORY_LABELS_KO.get(cat),
+                count=count,
+            )
+            for cat, count in cat_rows
+        ]
+        return VehicleStatsResponse(
+            total=int(total),
+            by_category=by_category,
+            by_fuel=[
+                VehicleFacetCount(key=val, label=val, count=cnt)
+                for val, cnt in fuel_rows
+            ],
+            by_transmission=[
+                VehicleFacetCount(key=val, label=val, count=cnt)
+                for val, cnt in trans_rows
+            ],
+            by_maker_top=[
+                VehicleMakerCount(maker=val, count=cnt)
+                for val, cnt in maker_rows
+            ],
+            by_year_model=[
+                VehicleYearBucket(year_model=val, count=cnt)
+                for val, cnt in year_rows
+            ],
+        )
 
     @staticmethod
     async def _upsert_details(session: AsyncSession, model, rows: list[dict[str, Any]]) -> None:

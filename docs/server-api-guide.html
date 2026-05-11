@@ -6,27 +6,18 @@
 <title>AuctionBridge Server API 가이드</title>
 <style>
 :root {
-  --bg: #f8fafc;
-  --bg-elev: #ffffff;
-  --bg-code: #0f172a;
-  --fg: #0f172a;
-  --fg-muted: #64748b;
-  --border: #e2e8f0;
-  --accent: #2563eb;
-  --accent-soft: #dbeafe;
+  --bg: #f8fafc; --bg-elev: #ffffff; --bg-code: #0f172a;
+  --fg: #0f172a; --fg-muted: #64748b; --border: #e2e8f0;
+  --accent: #2563eb; --accent-soft: #dbeafe;
   --ok: #16a34a; --ok-soft: #dcfce7;
   --warn: #d97706; --warn-soft: #fef3c7;
   --no: #94a3b8; --no-soft: #f1f5f9;
   --badge-req: #ef4444;
   --shadow: 0 1px 2px rgba(15,23,42,0.04), 0 4px 12px rgba(15,23,42,0.06);
-  --m-get: #16a34a;
-  --m-get-soft: #dcfce7;
-  --m-post: #2563eb;
-  --m-post-soft: #dbeafe;
-  --m-put: #d97706;
-  --m-put-soft: #fef3c7;
-  --m-delete: #dc2626;
-  --m-delete-soft: #fee2e2;
+  --m-get: #16a34a; --m-get-soft: #dcfce7;
+  --m-post: #2563eb; --m-post-soft: #dbeafe;
+  --m-put: #d97706; --m-put-soft: #fef3c7;
+  --m-delete: #dc2626; --m-delete-soft: #fee2e2;
 }
 [data-theme="dark"] {
   --bg: #0b1220; --bg-elev: #111a2e; --bg-code: #050a17;
@@ -45,14 +36,11 @@ html, body { margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard",
     "Apple SD Gothic Neo", "Noto Sans KR", Roboto, sans-serif;
-  background: var(--bg); color: var(--fg);
-  font-size: 14px; line-height: 1.55;
+  background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.55;
 }
 header.topbar {
-  position: sticky; top: 0; z-index: 50;
-  background: var(--bg-elev);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
+  position: sticky; top: 0; z-index: 50; background: var(--bg-elev);
+  border-bottom: 1px solid var(--border); padding: 12px 24px;
   display: flex; align-items: center; gap: 16px;
 }
 header.topbar h1 { margin: 0; font-size: 16px; font-weight: 700; }
@@ -63,15 +51,11 @@ header.topbar .grow { flex: 1; }
   background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
   padding: 6px 12px; width: 320px; max-width: 100%;
 }
-.search input {
-  flex: 1; border: 0; background: transparent; outline: none;
-  color: var(--fg); font-size: 13px;
-}
+.search input { flex: 1; border: 0; background: transparent; outline: none; color: var(--fg); font-size: 13px; }
 .theme-toggle {
   border: 1px solid var(--border); background: var(--bg-elev); color: var(--fg);
   border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px;
 }
-.theme-toggle:hover { background: var(--bg); }
 main { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 56px); }
 nav.side {
   border-right: 1px solid var(--border); background: var(--bg-elev);
@@ -84,9 +68,8 @@ nav.side .cat {
   color: var(--fg-muted); margin-top: 14px;
 }
 nav.side a {
-  display: block; padding: 6px 18px;
-  color: var(--fg); text-decoration: none; font-size: 13px;
-  border-left: 2px solid transparent;
+  display: block; padding: 6px 18px; color: var(--fg); text-decoration: none;
+  font-size: 13px; border-left: 2px solid transparent;
 }
 nav.side a:hover { background: var(--bg); }
 nav.side a.active {
@@ -99,8 +82,6 @@ nav.side a .method-mini {
 }
 nav.side a .method-mini.get { color: var(--m-get); }
 nav.side a .method-mini.post { color: var(--m-post); }
-nav.side a .method-mini.put { color: var(--m-put); }
-nav.side a .method-mini.delete { color: var(--m-delete); }
 section.content { padding: 24px 32px 80px; max-width: 1100px; }
 .hero {
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
@@ -108,34 +89,27 @@ section.content { padding: 24px 32px 80px; max-width: 1100px; }
 }
 .hero h2 { margin: 0 0 6px; font-size: 22px; }
 .hero p { margin: 6px 0; color: var(--fg-muted); font-size: 13px; }
-.basebar {
-  display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; margin: 16px 0 0;
-}
+.basebar { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; margin: 16px 0 0; }
 .basebar .item { display: inline-flex; align-items: center; gap: 6px; }
 .basebar .item code {
   background: var(--bg); border: 1px solid var(--border);
-  padding: 2px 8px; border-radius: 4px;
-  font-family: ui-monospace, monospace;
+  padding: 2px 8px; border-radius: 4px; font-family: ui-monospace, monospace;
 }
 .catbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 0; }
 .cathip {
   background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
   padding: 6px 14px; font-size: 12px; color: var(--fg-muted); text-decoration: none;
 }
-.cathip:hover { color: var(--fg); border-color: var(--fg-muted); }
-
 .cat-section { margin-bottom: 48px; }
 .cat-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .cat-header h3 { margin: 0; font-size: 20px; }
 .cat-header .icon { font-size: 24px; }
 .cat-header .sub { color: var(--fg-muted); font-size: 13px; }
 .cat-when {
-  font-size: 12.5px; padding: 8px 14px;
-  background: var(--accent-soft); color: var(--accent);
+  font-size: 12.5px; padding: 8px 14px; background: var(--accent-soft); color: var(--accent);
   border-radius: 8px; margin-bottom: 16px; border-left: 3px solid var(--accent);
 }
 [data-theme="dark"] .cat-when { color: #cbd5e1; }
-
 .api-card {
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
   padding: 18px 22px; margin-bottom: 14px; box-shadow: var(--shadow);
@@ -149,10 +123,7 @@ section.content { padding: 24px 32px 80px; max-width: 1100px; }
 .method.post { background: var(--m-post-soft); color: var(--m-post); }
 .method.put { background: var(--m-put-soft); color: var(--m-put); }
 .method.delete { background: var(--m-delete-soft); color: var(--m-delete); }
-.path-mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13.5px; font-weight: 600;
-}
+.path-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; font-weight: 600; }
 .auth-badge {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600;
@@ -161,26 +132,17 @@ section.content { padding: 24px 32px 80px; max-width: 1100px; }
 .auth-badge.public { background: var(--ok-soft); color: var(--ok); }
 .auth-badge.admin { background: var(--warn-soft); color: var(--warn); }
 .auth-badge.oidc { background: var(--m-post-soft); color: var(--m-post); }
-.api-summary {
-  margin: 8px 0 4px; font-size: 14.5px; font-weight: 600;
-}
+.api-summary { margin: 8px 0 4px; font-size: 14.5px; font-weight: 600; }
 .api-desc { color: var(--fg-muted); font-size: 13px; margin: 4px 0 12px; }
 .codeblock {
-  background: var(--bg-code); color: #e2e8f0;
-  border-radius: 8px; padding: 12px 14px;
-  font-family: ui-monospace, monospace;
+  background: var(--bg-code); color: #e2e8f0; border-radius: 8px;
+  padding: 12px 14px; font-family: ui-monospace, monospace;
   font-size: 12.5px; line-height: 1.6;
   white-space: pre-wrap; word-break: break-all;
   margin: 10px 0; overflow-x: auto;
 }
 .codeblock .verb { color: #facc15; font-weight: 700; }
-.codeblock .key { color: #93c5fd; }
-.codeblock .val { color: #fcd34d; }
-.codeblock .comment { color: #94a3b8; }
-.kv-grid {
-  display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px;
-  font-size: 13px; margin: 10px 0;
-}
+.kv-grid { display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px; font-size: 13px; margin: 10px 0; }
 .kv-grid .k { color: var(--fg-muted); }
 .kv-grid .v { font-family: ui-monospace, monospace; word-break: break-all; }
 table.params { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 8px 0 0; }
@@ -217,9 +179,7 @@ details[open] summary { margin-bottom: 8px; }
   gap: 8px 14px; padding: 6px 0; border-bottom: 1px solid var(--border);
   font-size: 12.5px;
 }
-.response-row .code {
-  font-weight: 700; font-family: ui-monospace, monospace;
-}
+.response-row .code { font-weight: 700; font-family: ui-monospace, monospace; }
 .response-row .code.ok { color: var(--ok); }
 .response-row .code.client { color: var(--warn); }
 .response-row .code.server { color: var(--m-delete); }
@@ -242,22 +202,7 @@ details[open] summary { margin-bottom: 8px; }
   <button id="theme" class="theme-toggle">🌙 Dark</button>
 </header>
 <main>
-<nav class="side"><div class='cat'>지도/매물 조회 (공개)</div>
-<a href='#get-api-v1-auctions' data-target='get-api-v1-auctions'><span class='method-mini get'>GET</span>/auctions</a>
-<a href='#get-api-v1-auctions-stats' data-target='get-api-v1-auctions-stats'><span class='method-mini get'>GET</span>/auctions/stats</a>
-<a href='#get-api-v1-auctions-auction_id' data-target='get-api-v1-auctions-auction_id'><span class='method-mini get'>GET</span>/auctions/{auction_id}</a>
-<div class='cat'>차량 조회 (공개)</div>
-<a href='#get-api-v1-vehicles' data-target='get-api-v1-vehicles'><span class='method-mini get'>GET</span>/vehicles</a>
-<a href='#get-api-v1-vehicles-stats' data-target='get-api-v1-vehicles-stats'><span class='method-mini get'>GET</span>/vehicles/stats</a>
-<div class='cat'>관리/보강 (Admin)</div>
-<a href='#post-api-v1-admin-enrich-bid-results' data-target='post-api-v1-admin-enrich-bid-results'><span class='method-mini post'>POST</span>/admin/enrich/bid-results</a>
-<a href='#post-api-v1-admin-enrich-bid-results-list' data-target='post-api-v1-admin-enrich-bid-results-list'><span class='method-mini post'>POST</span>/admin/enrich/bid-results-list</a>
-<a href='#post-api-v1-admin-enrich-movable-images' data-target='post-api-v1-admin-enrich-movable-images'><span class='method-mini post'>POST</span>/admin/enrich/movable-images</a>
-<a href='#post-api-v1-admin-enrich-realty-images' data-target='post-api-v1-admin-enrich-realty-images'><span class='method-mini post'>POST</span>/admin/enrich/realty-images</a>
-<a href='#post-api-v1-admin-sync-onbid' data-target='post-api-v1-admin-sync-onbid'><span class='method-mini post'>POST</span>/admin/sync/onbid</a>
-<div class='cat'>시스템/내부 (Internal)</div>
-<a href='#post-api-v1-internal-cron-daily-ingest' data-target='post-api-v1-internal-cron-daily-ingest'><span class='method-mini post'>POST</span>/internal/cron/daily-ingest</a>
-<a href='#get-health' data-target='get-health'><span class='method-mini get'>GET</span>/health</a></nav>
+<nav class="side"><div class='cat'>지도/매물 조회 (공개)</div><a href='#get-api-v1-auctions' data-target='get-api-v1-auctions'><span class='method-mini get'>GET</span>/auctions</a><a href='#get-api-v1-auctions-stats' data-target='get-api-v1-auctions-stats'><span class='method-mini get'>GET</span>/auctions/stats</a><a href='#get-api-v1-auctions-auction_id' data-target='get-api-v1-auctions-auction_id'><span class='method-mini get'>GET</span>/auctions/{auction_id}</a><div class='cat'>차량 조회 (공개)</div><a href='#get-api-v1-vehicles' data-target='get-api-v1-vehicles'><span class='method-mini get'>GET</span>/vehicles</a><a href='#get-api-v1-vehicles-stats' data-target='get-api-v1-vehicles-stats'><span class='method-mini get'>GET</span>/vehicles/stats</a><div class='cat'>관리/보강 (Admin)</div><a href='#post-api-v1-admin-enrich-bid-info' data-target='post-api-v1-admin-enrich-bid-info'><span class='method-mini post'>POST</span>/admin/enrich/bid-info</a><a href='#post-api-v1-admin-enrich-bid-results' data-target='post-api-v1-admin-enrich-bid-results'><span class='method-mini post'>POST</span>/admin/enrich/bid-results</a><a href='#post-api-v1-admin-enrich-bid-results-list' data-target='post-api-v1-admin-enrich-bid-results-list'><span class='method-mini post'>POST</span>/admin/enrich/bid-results-list</a><a href='#post-api-v1-admin-enrich-movable-images' data-target='post-api-v1-admin-enrich-movable-images'><span class='method-mini post'>POST</span>/admin/enrich/movable-images</a><a href='#post-api-v1-admin-enrich-realty-images' data-target='post-api-v1-admin-enrich-realty-images'><span class='method-mini post'>POST</span>/admin/enrich/realty-images</a><a href='#post-api-v1-admin-sync-onbid' data-target='post-api-v1-admin-sync-onbid'><span class='method-mini post'>POST</span>/admin/sync/onbid</a><div class='cat'>시스템/내부 (Internal)</div><a href='#post-api-v1-internal-cron-daily-ingest' data-target='post-api-v1-internal-cron-daily-ingest'><span class='method-mini post'>POST</span>/internal/cron/daily-ingest</a><a href='#get-health' data-target='get-health'><span class='method-mini get'>GET</span>/health</a></nav>
 <section class="content">
   <div class="hero">
     <h2>이 서버가 제공하는 API</h2>
@@ -419,6 +364,30 @@ curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles/
   </div>
   <div class="cat-when"><strong>언제 쓰나요?</strong> 수동으로 ingest를 돌리거나, 사진·입찰결과를 보강해야 할 때 (운영에서는 직접 호출 자제)</div>
   
+<div class="api-card" id="post-api-v1-admin-enrich-bid-info">
+  <div class="api-title-row">
+    <span class="method post">POST</span>
+    <span class="path-mono">/api/v1/admin/enrich/bid-info</span>
+    <span class="auth-badge admin">🔒 Admin (local)</span>
+  </div>
+  <div class="api-summary">#7 물건상세 입찰정보로 auctions.bid_info 보강</div>
+  
+  <details open><summary>호출 정보 + 예시</summary>
+    <div class='kv-grid'><div class='k'>Method</div><div class='v'>POST</div><div class='k'>경로</div><div class='v'>/api/v1/admin/enrich/bid-info</div><div class='k'>운영 URL</div><div class='v'>https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-info</div><div class='k'>로컬 URL</div><div class='v'>http://localhost:8000/api/v1/admin/enrich/bid-info</div><div class='k'>태그</div><div class='v'>admin</div></div>
+    <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-info
+
+# bash
+curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-info&quot;</div>
+  </details>
+  <details><summary>요청 파라미터 (1개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr></tbody></table>
+  </details>
+  
+  <details><summary>응답</summary>
+    <div class='response-row'><div class='code ok'>200</div><div>Successful Response</div></div><div class='response-row'><div class='code client'>422</div><div>Validation Error</div></div><details><summary>응답 스키마</summary><div style='font-size:12.5px;color:var(--fg-muted)'>응답 타입: <code>object</code></div></details>
+  </details>
+</div>
+
 <div class="api-card" id="post-api-v1-admin-enrich-bid-results">
   <div class="api-title-row">
     <span class="method post">POST</span>
@@ -619,19 +588,15 @@ curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/health&quot;</di
     });
   }
   q.addEventListener('input', applyFilter);
-
   const links = document.querySelectorAll('nav.side a[data-target]');
   const targets = Array.from(links).map(a => document.getElementById(a.dataset.target));
   function onScroll() {
     let active = null;
     const scrollY = window.scrollY + 100;
-    targets.forEach((t, i) => {
-      if (t && t.offsetTop <= scrollY) active = links[i];
-    });
+    targets.forEach((t, i) => { if (t && t.offsetTop <= scrollY) active = links[i]; });
     links.forEach(l => l.classList.toggle('active', l === active));
   }
   window.addEventListener('scroll', onScroll); onScroll();
-
   const tt = document.getElementById('theme');
   const saved = localStorage.getItem('theme') || 'light';
   document.documentElement.dataset.theme = saved;
@@ -641,14 +606,6 @@ curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/health&quot;</di
     document.documentElement.dataset.theme = next;
     localStorage.setItem('theme', next);
     tt.textContent = next === 'dark' ? '☀️ Light' : '🌙 Dark';
-  });
-
-  // copy curl
-  document.querySelectorAll('.codeblock').forEach(b => {
-    b.addEventListener('dblclick', () => {
-      const sel = window.getSelection(); const range = document.createRange();
-      range.selectNodeContents(b); sel.removeAllRanges(); sel.addRange(range);
-    });
   });
 })();
 </script>

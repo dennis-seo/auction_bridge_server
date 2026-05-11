@@ -4,9 +4,12 @@ Cloud Run + Cloud Scheduler 조합에서는 외부 cron이 트리거하므로
 이 모듈은 작업 함수만 노출한다. (in-process 스케줄러 제거)
 
 일 쿼터 1000/서비스를 고려해 다음 순서로:
-  1) 신규 ingest (realty/movable/vehicle 목록)
-  2) 만료된 ongoing 매물 입찰결과 보강 (status SOLD/FAILED 확정)
-  3) (옵션) 부동산 사진 URL 보강
+  1) 신규 ingest (realty/movable/vehicle 목록)               — #1,#2,#3
+  2) 입찰결과 일괄 보강 (#8 — 어제~오늘 개찰분, ongoing 매물과 매칭)
+  3) 누락분 fallback 보강 (#9 — #8로 못 잡은 만료 매물만)
+  4) 부동산 사진 보강 (#4)
+  5) 동산   사진 보강 (#5)
+  6) 입찰정보 보강 (#7 — 매물 상세 화면용 풍부도)
 """
 from __future__ import annotations
 
@@ -37,6 +40,7 @@ async def run_daily_onbid_ingest() -> dict:
 
     result: dict = {}
 
+    # 1) 신규 ingest
     logger.info("Daily Onbid ingest start.")
     stats = await service.run_full(
         max_pages_per_asset=settings.SCHEDULER_PAGES_PER_ASSET,
@@ -57,26 +61,87 @@ async def run_daily_onbid_ingest() -> dict:
         "by_prpt_div": stats.by_prpt_div,
     }
 
+    # 2) #8 입찰결과목록 일괄 보강
+    if settings.SCHEDULER_BID_RESULT_LIST_MAX_PAGES > 0:
+        logger.info(
+            "Bid-result list-enrich start (days=%d, max_pages=%d).",
+            settings.SCHEDULER_BID_RESULT_LIST_DAYS,
+            settings.SCHEDULER_BID_RESULT_LIST_MAX_PAGES,
+        )
+        br_list = await service.enrich_bid_results_by_list(
+            days_lookback=settings.SCHEDULER_BID_RESULT_LIST_DAYS,
+            max_pages_per_combo=settings.SCHEDULER_BID_RESULT_LIST_MAX_PAGES,
+        )
+        logger.info(
+            "Bid-result list-enrich done — targeted=%d enriched=%d api_calls=%d",
+            br_list.targeted, br_list.enriched, br_list.api_calls,
+        )
+        result["bid_result_list"] = {
+            "targeted": br_list.targeted,
+            "enriched": br_list.enriched,
+            "api_calls": br_list.api_calls,
+        }
+
+    # 3) #9 fallback — #8로 못 잡은 만료 매물만
     if settings.SCHEDULER_BID_RESULT_LIMIT > 0:
-        logger.info("Bid-result enrich start (limit=%d).", settings.SCHEDULER_BID_RESULT_LIMIT)
+        logger.info(
+            "Bid-result detail-fallback start (limit=%d).",
+            settings.SCHEDULER_BID_RESULT_LIMIT,
+        )
         br = await service.enrich_bid_results(limit=settings.SCHEDULER_BID_RESULT_LIMIT)
         logger.info(
-            "Bid-result enrich done — targeted=%d enriched=%d failed=%d",
+            "Bid-result detail-fallback done — targeted=%d enriched=%d failed=%d",
             br.targeted, br.enriched, br.failed,
         )
-        result["bid_result"] = {
+        result["bid_result_detail"] = {
             "targeted": br.targeted, "enriched": br.enriched, "failed": br.failed,
         }
 
+    # 4) 부동산 사진 (#4)
     if settings.SCHEDULER_IMAGE_LIMIT > 0:
-        logger.info("Image enrich start (limit=%d).", settings.SCHEDULER_IMAGE_LIMIT)
+        logger.info(
+            "Realty image enrich start (limit=%d).", settings.SCHEDULER_IMAGE_LIMIT,
+        )
         img = await service.enrich_realty_image_urls(limit=settings.SCHEDULER_IMAGE_LIMIT)
         logger.info(
-            "Image enrich done — targeted=%d enriched=%d failed=%d",
+            "Realty image enrich done — targeted=%d enriched=%d failed=%d",
             img.targeted, img.enriched, img.failed,
         )
-        result["image_enrich"] = {
+        result["image_enrich_realty"] = {
             "targeted": img.targeted, "enriched": img.enriched, "failed": img.failed,
+        }
+
+    # 5) 동산 사진 (#5)
+    if settings.SCHEDULER_MOVABLE_IMAGE_LIMIT > 0:
+        logger.info(
+            "Movable image enrich start (limit=%d).",
+            settings.SCHEDULER_MOVABLE_IMAGE_LIMIT,
+        )
+        img_m = await service.enrich_movable_image_urls(
+            limit=settings.SCHEDULER_MOVABLE_IMAGE_LIMIT
+        )
+        logger.info(
+            "Movable image enrich done — targeted=%d enriched=%d failed=%d",
+            img_m.targeted, img_m.enriched, img_m.failed,
+        )
+        result["image_enrich_movable"] = {
+            "targeted": img_m.targeted,
+            "enriched": img_m.enriched,
+            "failed": img_m.failed,
+        }
+
+    # 6) 입찰정보 (#7)
+    if settings.SCHEDULER_BID_INFO_LIMIT > 0:
+        logger.info(
+            "Bid info enrich start (limit=%d).", settings.SCHEDULER_BID_INFO_LIMIT,
+        )
+        bi = await service.enrich_bid_info(limit=settings.SCHEDULER_BID_INFO_LIMIT)
+        logger.info(
+            "Bid info enrich done — targeted=%d enriched=%d failed=%d",
+            bi.targeted, bi.enriched, bi.failed,
+        )
+        result["bid_info"] = {
+            "targeted": bi.targeted, "enriched": bi.enriched, "failed": bi.failed,
         }
 
     return result

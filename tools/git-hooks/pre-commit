@@ -22,34 +22,18 @@ else
   PY="python"
 fi
 
-staged=$(git diff --cached --name-only --diff-filter=ACMR)
+# core.quotepath=false로 한글 등 비-ASCII 파일명을 raw로 받는다.
+# 기본값 true면 "app/docs/\355\231..." 같이 quoted라 case/grep 매칭이 깨진다.
+staged=$(git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR)
 
-# Decide which guides need rebuild
+# 트리거 매핑 — grep으로 일괄 판정 (bash 3.x의 ** 미지원 회피 + quoted 처리 회피)
 needs_onbid=0
 needs_server=0
-while IFS= read -r f; do
-  case "$f" in
-    app/docs/*.docx)               needs_onbid=1 ;;
-    tools/build_onbid_guide.py)    needs_onbid=1 ;;
-    app/api/*.py|app/api/**/*.py)  needs_server=1 ;;
-    app/domain/*.py|app/domain/**/*.py) needs_server=1 ;;
-    main.py)                       needs_server=1 ;;
-    tools/build_server_guide.py)   needs_server=1 ;;
-  esac
-done <<EOF
-$staged
-EOF
-
-# bash 3.x (macOS default) doesn't support ** in case patterns; fallback grep
-if [ "$needs_server" -eq 0 ]; then
-  if echo "$staged" | grep -qE '^(app/api/|app/domain/).*\.py$'; then
-    needs_server=1
-  fi
+if echo "$staged" | grep -qE '^app/docs/.*\.docx$|^tools/build_onbid_guide\.py$'; then
+  needs_onbid=1
 fi
-if [ "$needs_server" -eq 0 ]; then
-  if echo "$staged" | grep -qE '^main\.py$'; then
-    needs_server=1
-  fi
+if echo "$staged" | grep -qE '^(app/api/|app/domain/).*\.py$|^main\.py$|^tools/build_server_guide\.py$'; then
+  needs_server=1
 fi
 
 if [ "$needs_onbid" -eq 0 ] && [ "$needs_server" -eq 0 ]; then

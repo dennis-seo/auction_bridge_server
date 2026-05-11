@@ -6,55 +6,36 @@
 <title>온비드 OpenAPI 가이드 — 카테고리별 요약</title>
 <style>
 :root {
-  --bg: #f8fafc;
-  --bg-elev: #ffffff;
-  --bg-code: #0f172a;
-  --fg: #0f172a;
-  --fg-muted: #64748b;
-  --border: #e2e8f0;
-  --accent: #2563eb;
-  --accent-soft: #dbeafe;
-  --ok: #16a34a;
-  --ok-soft: #dcfce7;
-  --warn: #d97706;
-  --warn-soft: #fef3c7;
-  --no: #94a3b8;
-  --no-soft: #f1f5f9;
+  --bg: #f8fafc; --bg-elev: #ffffff; --bg-code: #0f172a;
+  --fg: #0f172a; --fg-muted: #64748b; --border: #e2e8f0;
+  --accent: #2563eb; --accent-soft: #dbeafe;
+  --ok: #16a34a; --ok-soft: #dcfce7;
+  --warn: #d97706; --warn-soft: #fef3c7;
+  --no: #94a3b8; --no-soft: #f1f5f9;
   --badge-req: #ef4444;
   --shadow: 0 1px 2px rgba(15,23,42,0.04), 0 4px 12px rgba(15,23,42,0.06);
 }
 [data-theme="dark"] {
-  --bg: #0b1220;
-  --bg-elev: #111a2e;
-  --bg-code: #050a17;
-  --fg: #e2e8f0;
-  --fg-muted: #94a3b8;
-  --border: #1e293b;
-  --accent: #60a5fa;
-  --accent-soft: #1e3a8a;
-  --ok: #4ade80;
-  --ok-soft: #14532d;
-  --warn: #fbbf24;
-  --warn-soft: #78350f;
-  --no: #475569;
-  --no-soft: #1e293b;
+  --bg: #0b1220; --bg-elev: #111a2e; --bg-code: #050a17;
+  --fg: #e2e8f0; --fg-muted: #94a3b8; --border: #1e293b;
+  --accent: #60a5fa; --accent-soft: #1e3a8a;
+  --ok: #4ade80; --ok-soft: #14532d;
+  --warn: #fbbf24; --warn-soft: #78350f;
+  --no: #475569; --no-soft: #1e293b;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard",
     "Apple SD Gothic Neo", "Noto Sans KR", Roboto, sans-serif;
-  background: var(--bg); color: var(--fg);
-  font-size: 14px; line-height: 1.55;
+  background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.55;
 }
 header.topbar {
-  position: sticky; top: 0; z-index: 50;
-  background: var(--bg-elev);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
+  position: sticky; top: 0; z-index: 50; background: var(--bg-elev);
+  border-bottom: 1px solid var(--border); padding: 12px 24px;
   display: flex; align-items: center; gap: 16px;
 }
-header.topbar h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+header.topbar h1 { margin: 0; font-size: 16px; font-weight: 700; }
 header.topbar .sub { font-size: 12px; color: var(--fg-muted); margin-left: 4px; }
 header.topbar .grow { flex: 1; }
 .search {
@@ -83,18 +64,15 @@ nav.side .cat {
   color: var(--fg-muted); margin-top: 14px;
 }
 nav.side a {
-  display: block; padding: 6px 18px;
-  color: var(--fg); text-decoration: none; font-size: 13px;
-  border-left: 2px solid transparent;
+  display: block; padding: 6px 18px; color: var(--fg); text-decoration: none;
+  font-size: 13px; border-left: 2px solid transparent;
 }
 nav.side a:hover { background: var(--bg); }
 nav.side a.active {
   background: var(--accent-soft); border-left-color: var(--accent);
   color: var(--accent); font-weight: 600;
 }
-nav.side a.special {
-  color: var(--accent); font-weight: 600;
-}
+nav.side a.special { color: var(--accent); font-weight: 600; }
 section.content { padding: 24px 32px 80px; max-width: 1100px; }
 .hero {
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
@@ -109,14 +87,11 @@ section.content { padding: 24px 32px 80px; max-width: 1100px; }
 }
 .cathip:hover { color: var(--fg); border-color: var(--fg-muted); }
 
-/* ----- 매트릭스 섹션 ----- */
 .matrix-card {
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
   padding: 20px 24px; margin-bottom: 28px; box-shadow: var(--shadow);
 }
-.matrix-card h3 {
-  margin: 0 0 4px; font-size: 17px; display: flex; align-items: baseline; gap: 8px;
-}
+.matrix-card h3 { margin: 0 0 4px; font-size: 17px; }
 .matrix-card .sub { color: var(--fg-muted); font-size: 13px; margin-bottom: 14px; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 16px; font-size: 12.5px; }
 .legend .item { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-muted); }
@@ -126,23 +101,15 @@ section.content { padding: 24px 32px 80px; max-width: 1100px; }
 .legend .glyph.no { color: var(--no); }
 table.matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.matrix th, table.matrix td {
-  border-bottom: 1px solid var(--border); padding: 9px 10px; text-align: left;
-  vertical-align: top;
+  border-bottom: 1px solid var(--border); padding: 9px 10px; text-align: left; vertical-align: top;
 }
 table.matrix th {
   font-weight: 600; font-size: 11.5px; color: var(--fg-muted);
   text-transform: uppercase; letter-spacing: 0.04em; background: var(--bg);
 }
-table.matrix td.num {
-  font-family: ui-monospace, monospace; color: var(--fg-muted); white-space: nowrap;
-}
-table.matrix td.svc a {
-  color: var(--fg); text-decoration: none; font-weight: 500;
-}
+table.matrix td.num { font-family: ui-monospace, monospace; color: var(--fg-muted); white-space: nowrap; }
+table.matrix td.svc a { color: var(--fg); text-decoration: none; font-weight: 500; }
 table.matrix td.svc a:hover { color: var(--accent); }
-table.matrix td.status {
-  white-space: nowrap;
-}
 .cell-glyph {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 9px; border-radius: 6px; font-size: 12.5px; font-weight: 600;
@@ -150,9 +117,7 @@ table.matrix td.status {
 .cell-glyph.ok { background: var(--ok-soft); color: var(--ok); }
 .cell-glyph.warn { background: var(--warn-soft); color: var(--warn); }
 .cell-glyph.no { background: var(--no-soft); color: var(--no); }
-.note {
-  font-size: 11.5px; color: var(--fg-muted); margin-left: 8px;
-}
+.note { font-size: 11.5px; color: var(--fg-muted); margin-left: 8px; }
 
 .cat-section { margin-bottom: 48px; }
 .cat-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
@@ -160,8 +125,7 @@ table.matrix td.status {
 .cat-header .icon { font-size: 24px; }
 .cat-header .sub { color: var(--fg-muted); font-size: 13px; }
 .cat-when {
-  font-size: 12.5px; padding: 8px 14px;
-  background: var(--accent-soft); color: var(--accent);
+  font-size: 12.5px; padding: 8px 14px; background: var(--accent-soft); color: var(--accent);
   border-radius: 8px; margin-bottom: 16px; border-left: 3px solid var(--accent);
 }
 [data-theme="dark"] .cat-when { color: #cbd5e1; }
@@ -189,13 +153,10 @@ table.matrix td.status {
   font-size: 13px; margin: 10px 0;
 }
 .kv-grid .k { color: var(--fg-muted); }
-.kv-grid .v {
-  font-family: ui-monospace, SFMono-Regular, "Menlo", monospace; word-break: break-all;
-}
+.kv-grid .v { font-family: ui-monospace, SFMono-Regular, "Menlo", monospace; word-break: break-all; }
 .codeblock {
-  background: var(--bg-code); color: #e2e8f0;
-  border-radius: 8px; padding: 12px 14px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg-code); color: #e2e8f0; border-radius: 8px;
+  padding: 12px 14px; font-family: ui-monospace, monospace;
   font-size: 12.5px; line-height: 1.6;
   white-space: pre-wrap; word-break: break-all;
   margin: 10px 0; overflow-x: auto;
@@ -210,8 +171,11 @@ table.params th {
   text-transform: uppercase; letter-spacing: 0.04em; background: var(--bg);
 }
 table.params td.name { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
-table.params td.sample { font-family: ui-monospace, monospace; color: var(--fg-muted); max-width: 260px; word-break: break-all; }
-.badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: 4px; letter-spacing: 0.03em; }
+table.params td.sample {
+  font-family: ui-monospace, monospace; color: var(--fg-muted);
+  max-width: 260px; word-break: break-all;
+}
+.badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: 4px; }
 .badge.req { background: rgba(239,68,68,0.12); color: var(--badge-req); }
 .badge.opt { background: rgba(148,163,184,0.18); color: var(--no); }
 details { margin: 12px 0; }
@@ -288,12 +252,8 @@ details[open] summary { margin-bottom: 8px; }
 </div>
 
   <table class="matrix">
-    <thead>
-      <tr><th style="width:90px">#</th><th>서비스</th><th style="width:160px">코드 사용</th><th style="width:160px">스케줄러</th></tr>
-    </thead>
-    <tbody>
-      <tr><td class='num'>01</td><td class='svc'><a href='#rlst-list'>부동산 목록</a></td><td class='status'><span class="cell-glyph ok">✓</span></td><td class='status'><span class="cell-glyph ok">✓</span></td></tr><tr><td class='num'>02</td><td class='svc'><a href='#mvast-list'>동산 목록</a></td><td class='status'><span class="cell-glyph ok">✓</span></td><td class='status'><span class="cell-glyph ok">✓</span></td></tr><tr><td class='num'>03</td><td class='svc'><a href='#car-list'>차량 목록</a></td><td class='status'><span class="cell-glyph ok">✓</span></td><td class='status'><span class="cell-glyph ok">✓</span></td></tr><tr><td class='num'>04</td><td class='svc'><a href='#rlst-detail'>부동산 상세</a></td><td class='status'><span class="cell-glyph ok">✓</span><span class="note">이미지 enrich</span></td><td class='status'><span class="cell-glyph warn">△</span><span class="note">off 기본</span></td></tr><tr><td class='num'>05</td><td class='svc'><a href='#mvast-detail'>동산 상세</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>07</td><td class='svc'><a href='#bid-info'>물건상세 입찰정보</a></td><td class='status'><span class="cell-glyph ok">✓</span><span class="note">클라이언트만</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>08</td><td class='svc'><a href='#bid-result-list'>입찰결과 목록</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>09</td><td class='svc'><a href='#bid-result-detail'>입찰결과 상세</a></td><td class='status'><span class="cell-glyph ok">✓</span></td><td class='status'><span class="cell-glyph ok">✓</span></td></tr><tr><td class='num'>10/11/13</td><td class='svc'><a href='#pbanc-list'>공고 목록/상세/물건정보</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>14/15</td><td class='svc'><a href='#pbanc-result-list'>공고 입찰결과 목/상</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>20/21/22</td><td class='svc'><a href='#gov-state'>정부재산목록 (국유/공유/친일)</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>24</td><td class='svc'><a href='#code-addr'>코드 및 주소 마스터</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>25</td><td class='svc'><a href='#region-stats'>지역별 입찰 통계</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr>
-    </tbody>
+    <thead><tr><th style="width:90px">#</th><th>서비스</th><th style="width:160px">코드 사용</th><th style="width:160px">스케줄러</th></tr></thead>
+    <tbody><tr><td class='num'>01</td><td class='svc'><a href='#rlst-list'>부동산 목록</a></td><td class='status'><span class="cell-glyph ok">✓</span></td><td class='status'><span class="cell-glyph ok">✓</span></td></tr><tr><td class='num'>02</td><td class='svc'><a href='#mvast-list'>동산 목록</a></td><td class='status'><span class="cell-glyph ok">✓</span></td><td class='status'><span class="cell-glyph ok">✓</span></td></tr><tr><td class='num'>03</td><td class='svc'><a href='#car-list'>차량 목록</a></td><td class='status'><span class="cell-glyph ok">✓</span></td><td class='status'><span class="cell-glyph ok">✓</span></td></tr><tr><td class='num'>04</td><td class='svc'><a href='#rlst-detail'>부동산 상세</a></td><td class='status'><span class="cell-glyph ok">✓</span><span class="note">이미지 enrich</span></td><td class='status'><span class="cell-glyph warn">△</span><span class="note">off 기본</span></td></tr><tr><td class='num'>05</td><td class='svc'><a href='#mvast-detail'>동산 상세</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>07</td><td class='svc'><a href='#bid-info'>물건상세 입찰정보</a></td><td class='status'><span class="cell-glyph ok">✓</span><span class="note">클라이언트만</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>08</td><td class='svc'><a href='#bid-result-list'>입찰결과 목록</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>09</td><td class='svc'><a href='#bid-result-detail'>입찰결과 상세</a></td><td class='status'><span class="cell-glyph ok">✓</span></td><td class='status'><span class="cell-glyph ok">✓</span></td></tr><tr><td class='num'>10/11/13</td><td class='svc'><a href='#pbanc-list'>공고 목록/상세/물건정보</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>14/15</td><td class='svc'><a href='#pbanc-result-list'>공고 입찰결과 목/상</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>20/21/22</td><td class='svc'><a href='#gov-state'>정부재산목록 (국유/공유/친일)</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>24</td><td class='svc'><a href='#code-addr'>코드 및 주소 마스터</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr><tr><td class='num'>25</td><td class='svc'><a href='#region-stats'>지역별 입찰 통계</a></td><td class='status'><span class="cell-glyph no">✗</span></td><td class='status'><span class="cell-glyph no">✗</span></td></tr></tbody>
   </table>
 </div>
 
@@ -2069,19 +2029,15 @@ details[open] summary { margin-bottom: 8px; }
     });
   }
   q.addEventListener('input', applyFilter);
-
   const links = document.querySelectorAll('nav.side a[data-target]');
   const targets = Array.from(links).map(a => document.getElementById(a.dataset.target));
   function onScroll() {
     let active = null;
     const scrollY = window.scrollY + 100;
-    targets.forEach((t, i) => {
-      if (t && t.offsetTop <= scrollY) active = links[i];
-    });
+    targets.forEach((t, i) => { if (t && t.offsetTop <= scrollY) active = links[i]; });
     links.forEach(l => l.classList.toggle('active', l === active));
   }
   window.addEventListener('scroll', onScroll); onScroll();
-
   const tt = document.getElementById('theme');
   const saved = localStorage.getItem('theme') || 'light';
   document.documentElement.dataset.theme = saved;

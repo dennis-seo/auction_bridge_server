@@ -65,6 +65,17 @@ class AuctionRepository(ABC):
         ...
 
     @abstractmethod
+    async def list_cltrs_needing_round_backfill(
+        self, limit: int
+    ) -> list[tuple[str, AssetType]]:
+        """회차 누락이 의심되는 cltr_mng_no 후보 — (cltr_mng_no, asset_type).
+
+        같은 cltr 안에서 가장 빠른 pbct_nsq가 시작 회차가 아닌 경우(예: 1회차 누락)
+        를 의심해 보강 대상으로 반환.
+        """
+        ...
+
+    @abstractmethod
     async def list_auctions_pending_results(
         self, limit: int
     ) -> list[tuple[int, str, int]]:

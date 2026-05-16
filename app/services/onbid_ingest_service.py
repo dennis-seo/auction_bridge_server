@@ -643,6 +643,106 @@ class OnbidIngestService:
         results = await asyncio.gather(*[_one(i) for i in items])
         return sum(1 for r in results if r)
 
+    async def backfill_cltr_mng_no(
+        self,
+        cltr_mng_no: str,
+        asset: OnbidAssetService,
+        *,
+        prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
+        num_of_rows: int = 100,
+    ) -> IngestStats:
+        """단일 cltrMngNo의 모든 회차를 list API로 재조회 + upsert.
+
+        정기 ingest의 페이지/쿼터 한도로 누락된 회차(예: 1회차 row가
+        후속 회차들과 다른 페이지에 있어 잘린 경우)를 보강한다.
+        pvctTrgtYn N/Y 양쪽 모두 조회해 어느 분류에 있어도 수집.
+        """
+        stats = IngestStats()
+        normalizer = _NORMALIZERS[asset]
+        seen: set[tuple[str, int]] = set()
+
+        for pvct in ("N", "Y"):
+            try:
+                async for page in self._client.iter_assets(
+                    asset,
+                    prpt_div_cd=prpt_div_cd,
+                    pvct_trgt_yn=pvct,
+                    num_of_rows=num_of_rows,
+                    extra={"cltrMngNo": cltr_mng_no},
+                ):
+                    stats.pages += 1
+                    stats.fetched += len(page.items)
+                    normalized: list[AuctionUpsertItem] = []
+                    for raw in page.items:
+                        # cltrMngNo 검색 미지원 API일 경우 전체 페이지가 돌아옴 — 클라이언트 측 필터.
+                        if str_or_none(raw.get("cltrMngNo")) != cltr_mng_no:
+                            continue
+                        item = normalizer(raw)
+                        if item is None:
+                            continue
+                        key = (item.cltr_mng_no, item.pbct_cdtn_no)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        normalized.append(item)
+                    stats.normalized += len(normalized)
+
+                    if asset == OnbidAssetService.REALTY:
+                        stats.geocoded += await self._geocode_batch(normalized)
+
+                    if normalized:
+                        ins, upd = await self._repo.upsert_many(normalized)
+                        stats.inserted += ins
+                        stats.updated += upd
+            except OnbidQuotaExceeded as e:
+                logger.warning(
+                    "backfill quota exceeded — cltr=%s pvct=%s: %s",
+                    cltr_mng_no, pvct, e,
+                )
+                break
+            except OnbidAPIError as e:
+                logger.info(
+                    "backfill skip cltr=%s pvct=%s: %s",
+                    cltr_mng_no, pvct, e,
+                )
+        logger.info(
+            "backfill cltr=%s asset=%s pages=%d fetched=%d inserted=%d updated=%d",
+            cltr_mng_no, asset.value, stats.pages, stats.fetched,
+            stats.inserted, stats.updated,
+        )
+        return stats
+
+    async def run_backfill_rounds(self, *, limit: int = 50) -> IngestStats:
+        """회차 누락이 의심되는 cltrMngNo N건에 대해 backfill 일괄 실행.
+
+        repo가 제공하는 후보 목록(=동일 cltr 내 row 수가 적거나 pbct_nsq가
+        후속 회차로만 채워진 매물)을 순회. asset_type을 매물별로 알기 위해
+        후보 튜플은 (cltr_mng_no, asset_type)으로 받는다.
+        """
+        total = IngestStats()
+        targets = await self._repo.list_cltrs_needing_round_backfill(limit=limit)
+        asset_by_type = {
+            AssetType.REALTY:  OnbidAssetService.REALTY,
+            AssetType.MOVABLE: OnbidAssetService.MOVABLE,
+            AssetType.VEHICLE: OnbidAssetService.VEHICLE,
+        }
+        for cltr, asset_type in targets:
+            asset = asset_by_type.get(asset_type)
+            if asset is None:
+                continue
+            try:
+                s = await self.backfill_cltr_mng_no(cltr, asset)
+            except OnbidQuotaExceeded as e:
+                logger.warning("run_backfill_rounds halted by quota: %s", e)
+                break
+            total.fetched += s.fetched
+            total.normalized += s.normalized
+            total.geocoded += s.geocoded
+            total.inserted += s.inserted
+            total.updated += s.updated
+            total.pages += s.pages
+        return total
+
     async def enrich_bid_results(self, *, limit: int = 50) -> EnrichStats:
         """bid_end_at 지난 ongoing 매물에 대해 입찰결과상세(#9)를 호출해 결과를 적재.
 

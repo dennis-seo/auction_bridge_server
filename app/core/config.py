@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     SCHEDULER_NUM_OF_ROWS: int = 200         # 페이지당 행
     SCHEDULER_BID_RESULT_LIMIT: int = 200    # 입찰결과 보강 1회 한도
     SCHEDULER_IMAGE_LIMIT: int = 0           # 이미지 보강 1회 한도 (0=skip; quota 보존)
+    SCHEDULER_BACKFILL_LIMIT: int = 50       # 회차 누락 backfill 1회 한도 (0=skip)
 
     # 지오코딩 동시성
     GEOCODE_CONCURRENCY: int = 10

@@ -123,6 +123,61 @@ async def enrich_realty_images(
 
 
 @router.post(
+    "/backfill/rounds",
+    summary="회차 누락 매물 보강 — cltrMngNo 단위 list 재호출로 빠진 회차 수집",
+)
+async def backfill_rounds(
+    cltr_mng_no: str | None = Query(
+        default=None,
+        description="단일 cltrMngNo만 보강. 미지정 시 DB의 후보 목록을 사용.",
+    ),
+    asset: str | None = Query(
+        default=None,
+        description="cltr_mng_no 단건 보강 시 자산타입. 'realty'|'movable'|'vehicle'.",
+    ),
+    limit: int = Query(default=50, ge=1, le=500),
+    repo: AuctionRepository = Depends(get_auction_repository),
+) -> dict:
+    settings = get_settings()
+    if not settings.ONBID_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ONBID_SERVICE_KEY is not configured.",
+        )
+    client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
+    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
+    service = OnbidIngestService(
+        client=client, geocoder=geocoder, repo=repo,
+        geocode_concurrency=settings.GEOCODE_CONCURRENCY,
+    )
+    if cltr_mng_no:
+        key = (asset or "").strip().lower()
+        if key not in _ASSET_ALIASES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="cltr_mng_no 단건 보강 시 asset(realty|movable|vehicle) 필수.",
+            )
+        stats = await service.backfill_cltr_mng_no(
+            cltr_mng_no.strip(), _ASSET_ALIASES[key]
+        )
+    else:
+        stats = await service.run_backfill_rounds(limit=limit)
+    return {
+        "cltr_mng_no": cltr_mng_no,
+        "asset": asset,
+        "limit": limit,
+        "stats": {
+            "pages": stats.pages,
+            "fetched": stats.fetched,
+            "normalized": stats.normalized,
+            "geocoded": stats.geocoded,
+            "inserted": stats.inserted,
+            "updated": stats.updated,
+        },
+    }
+
+
+@router.post(
     "/enrich/bid-results",
     summary="만료된 ongoing 매물의 입찰결과를 보강 (status: SOLD/FAILED/CANCELLED 확정)",
 )

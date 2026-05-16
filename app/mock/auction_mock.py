@@ -254,5 +254,10 @@ class MockAuctionRepository(AuctionRepository):
     ) -> list[tuple[int, str, int]]:
         return []
 
+    async def list_cltrs_needing_round_backfill(
+        self, limit: int
+    ):
+        return []
+
     async def upsert_bid_result(self, auction_id: int, payload) -> None:
         return None

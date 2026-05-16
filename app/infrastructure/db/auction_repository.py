@@ -516,6 +516,47 @@ class DBAuctionRepository(AuctionRepository):
             )
             await session.commit()
 
+    # ---------- round backfill ----------
+    async def list_cltrs_needing_round_backfill(
+        self, limit: int
+    ) -> list[tuple[str, AssetType]]:
+        """가장 빠른 pbct_nsq가 시작 회차가 아닌 active cltr들을 반환.
+
+        휴리스틱: scheduled/ongoing 상태 row의 cltr 안에서 가장 작은 pbct_nsq가
+        "001"보다 크면 그 앞 회차들이 누락됐을 가능성. 단, 회차 코드 체계가
+        매물마다 다를 수 있으니 가벼운 임계만 두고 false-positive는 backfill 시
+        client-side 필터로 흡수.
+        """
+        async with self._session_factory() as session:
+            subq = (
+                select(
+                    AuctionORM.cltr_mng_no.label("cltr"),
+                    AuctionORM.asset_type.label("atype"),
+                    func.min(AuctionORM.pbct_nsq).label("min_nsq"),
+                )
+                .where(
+                    AuctionORM.source == AuctionSource.ONBID.value,
+                    AuctionORM.cltr_mng_no.is_not(None),
+                    AuctionORM.pbct_nsq.is_not(None),
+                    AuctionORM.status.in_(_ACTIVE_STATUSES),
+                )
+                .group_by(AuctionORM.cltr_mng_no, AuctionORM.asset_type)
+                .subquery()
+            )
+            rows = (await session.execute(
+                select(subq.c.cltr, subq.c.atype)
+                .where(subq.c.min_nsq > "001")
+                .order_by(subq.c.min_nsq.desc())
+                .limit(limit)
+            )).all()
+        out: list[tuple[str, AssetType]] = []
+        for r in rows:
+            try:
+                out.append((r.cltr, AssetType(r.atype)))
+            except ValueError:
+                continue
+        return out
+
     # ---------- bid result enrichment ----------
     async def list_auctions_pending_results(
         self, limit: int

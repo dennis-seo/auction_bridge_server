@@ -52,7 +52,16 @@ async def _run_daily_onbid_ingest() -> None:
         stats.geocoded, stats.inserted, stats.updated,
     )
 
-    # 2) 입찰결과 보강 — 만료된 ongoing 매물의 status 확정
+    # 2) 회차 누락 backfill — 같은 cltrMngNo의 1회차 등이 빠졌을 때 보강
+    if settings.SCHEDULER_BACKFILL_LIMIT > 0:
+        logger.info("Round backfill start (limit=%d).", settings.SCHEDULER_BACKFILL_LIMIT)
+        bf = await service.run_backfill_rounds(limit=settings.SCHEDULER_BACKFILL_LIMIT)
+        logger.info(
+            "Round backfill done — pages=%d fetched=%d inserted=%d updated=%d",
+            bf.pages, bf.fetched, bf.inserted, bf.updated,
+        )
+
+    # 3) 입찰결과 보강 — 만료된 ongoing 매물의 status 확정
     if settings.SCHEDULER_BID_RESULT_LIMIT > 0:
         logger.info("Bid-result enrich start (limit=%d).", settings.SCHEDULER_BID_RESULT_LIMIT)
         br = await service.enrich_bid_results(limit=settings.SCHEDULER_BID_RESULT_LIMIT)
@@ -61,7 +70,7 @@ async def _run_daily_onbid_ingest() -> None:
             br.targeted, br.enriched, br.failed,
         )
 
-    # 3) 이미지 보강 (선택) — 일일 쿼터를 많이 쓰므로 기본 0
+    # 4) 이미지 보강 (선택) — 일일 쿼터를 많이 쓰므로 기본 0
     if settings.SCHEDULER_IMAGE_LIMIT > 0:
         logger.info("Image enrich start (limit=%d).", settings.SCHEDULER_IMAGE_LIMIT)
         img = await service.enrich_realty_image_urls(limit=settings.SCHEDULER_IMAGE_LIMIT)

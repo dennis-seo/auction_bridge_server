@@ -220,13 +220,48 @@ def parse_dt(v: Any) -> datetime | None:
     return dt
 
 
+# 지번 토큰: "4-6", "209", "산 12-3" 등. 동/리 다음 첫 숫자(부번 옵션) + "산" prefix 허용.
+_PARCEL_TOKEN_RE = re.compile(r"^(산\s*)?(\d+)(?:-(\d+))?(?=\s|$)")
+
+
+def _extract_parcel(admin: str, title: str | None) -> str | None:
+    """title이 admin(='sido sigungu emd')로 시작하면 그 뒤 첫 토큰에서 지번을 잘라낸다.
+
+    예) admin="경기도 성남시 분당구 정자동", title="경기도 성남시 분당구 정자동 4-6 한국잡월드"
+        → "4-6"
+    """
+    if not title or not admin:
+        return None
+    remainder = title[len(admin):].lstrip() if title.startswith(admin) else None
+    if remainder is None:
+        return None
+    m = _PARCEL_TOKEN_RE.match(remainder)
+    if not m:
+        return None
+    san, bonbeon, bubeon = m.group(1), m.group(2), m.group(3)
+    parcel = f"{bonbeon}-{bubeon}" if bubeon else bonbeon
+    return f"산 {parcel}" if san else parcel
+
+
 def compose_address(
-    sido: str | None, sigungu: str | None, emd: str | None, fallback: str | None = None
+    sido: str | None,
+    sigungu: str | None,
+    emd: str | None,
+    fallback: str | None = None,
+    *,
+    title: str | None = None,
 ) -> str | None:
+    """행정주소 + (가능하면) title에서 추출한 지번까지 합성.
+
+    title이 동까지의 행정주소로 시작하면 그 뒤 첫 숫자 토큰을 지번으로 보고 결합.
+    geocoder가 동(洞) centroid 대신 정확한 parcel을 매칭하도록 입력을 강화한다.
+    """
     parts = [p for p in (sido, sigungu, emd) if p]
-    if parts:
-        return " ".join(parts)
-    return fallback
+    if not parts:
+        return fallback
+    admin = " ".join(parts)
+    parcel = _extract_parcel(admin, title)
+    return f"{admin} {parcel}" if parcel else admin
 
 
 def str_or_none(v: Any) -> str | None:
@@ -325,7 +360,9 @@ def _normalize_common(raw: dict[str, Any], asset_type: AssetType) -> AuctionUpse
         region_sido=sido,
         region_sigungu=sigungu,
         region_emd=emd,
-        address=compose_address(sido, sigungu, emd),
+        address=compose_address(
+            sido, sigungu, emd, title=str_or_none(raw.get("onbidCltrNm")),
+        ),
         failed_count=parse_int(raw.get("usbdNft")) or 0,
         progress_count=parse_int(raw.get("bidPrgnNft")) or 0,
         correction_yn=bool(parse_yn(raw.get("crtnYn"))),

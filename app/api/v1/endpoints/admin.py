@@ -1,17 +1,25 @@
 """개발/운영용 admin 엔드포인트. 1차에는 인증 없이 local 한정."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select, update
 
 from app.api.deps import get_auction_repository
 from app.core.config import get_settings
+from app.core.database import AsyncSessionLocal
 from app.domain.auction.repository import AuctionRepository
 from app.domain.auction.schemas import AssetType
+from app.infrastructure.db.models import AuctionORM
 from app.infrastructure.external.kakao_geocoder import KakaoGeocoder
 from app.infrastructure.external.onbid_client import OnbidAssetService, OnbidClient
-from app.services.onbid_ingest_service import IngestStats, OnbidIngestService
+from app.services.onbid_ingest_service import (
+    IngestStats,
+    OnbidIngestService,
+    compose_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -249,3 +257,124 @@ async def enrich_bid_info(
         "enriched": stats.enriched,
         "failed": stats.failed,
     }
+
+
+# =====================================================================
+# 좌표 백필 — 동(洞) centroid에 뭉친 row를 parcel 단위로 재지오코딩
+# =====================================================================
+async def _backfill_geocoding_run(
+    *, dry_run: bool, limit: int, min_cluster: int, concurrency: int,
+) -> dict:
+    """동일 location N>=min_cluster 누적 row를 limit건 재지오코딩.
+
+    ingest 와 동일한 compose_address(region_*, title=title) 로 입력 강화 후
+    KakaoGeocoder.lookup — parcel-level 응답만 채택. 좌표 못 구하면
+    location=NULL 로 정정(가짜 좌표 잔존 방지).
+    """
+    settings = get_settings()
+    if not settings.KAKAO_REST_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="KAKAO_REST_API_KEY is not configured.",
+        )
+    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
+
+    # 1) 동일 location N>=min_cluster 누적 row 추출
+    async with AsyncSessionLocal() as session:
+        dup_loc_subq = (
+            select(AuctionORM.location)
+            .where(AuctionORM.location.is_not(None))
+            .group_by(AuctionORM.location)
+            .having(func.count() >= min_cluster)
+            .subquery()
+        )
+        rows = (await session.execute(
+            select(
+                AuctionORM.id,
+                AuctionORM.title,
+                AuctionORM.address,
+                AuctionORM.region_sido,
+                AuctionORM.region_sigungu,
+                AuctionORM.region_emd,
+            )
+            .where(AuctionORM.location.in_(select(dup_loc_subq.c.location)))
+            .order_by(AuctionORM.id)
+            .limit(limit)
+        )).all()
+
+    stats = {
+        "targeted": len(rows),
+        "api_calls": 0,
+        "updated": 0,
+        "nullified": 0,
+        "skipped_no_address": 0,
+        "failed": 0,
+    }
+    samples: list[dict] = []
+    if not rows:
+        return {"dry_run": dry_run, "stats": stats, "samples": samples}
+
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(row) -> None:
+        new_addr = compose_address(
+            row.region_sido, row.region_sigungu, row.region_emd, title=row.title,
+        )
+        if not new_addr:
+            stats["skipped_no_address"] += 1
+            return
+        async with sem:
+            stats["api_calls"] += 1
+            lng, lat = await geocoder.lookup(new_addr)
+        if len(samples) < 20:
+            samples.append({
+                "id": row.id,
+                "old_address": row.address,
+                "new_address": new_addr,
+                "lng": lng, "lat": lat,
+            })
+        if dry_run:
+            return
+        try:
+            async with AsyncSessionLocal() as session:
+                values: dict = {"address": new_addr}
+                if lng is not None and lat is not None:
+                    values["location"] = func.ST_SetSRID(
+                        func.ST_MakePoint(lng, lat), 4326,
+                    )
+                else:
+                    values["location"] = None
+                await session.execute(
+                    update(AuctionORM)
+                    .where(AuctionORM.id == row.id)
+                    .values(**values)
+                )
+                await session.commit()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("backfill update failed id=%d: %s", row.id, e)
+            stats["failed"] += 1
+            return
+        if lng is None or lat is None:
+            stats["nullified"] += 1
+        else:
+            stats["updated"] += 1
+
+    await asyncio.gather(*[_one(r) for r in rows])
+    return {"dry_run": dry_run, "stats": stats, "samples": samples}
+
+
+@router.post(
+    "/backfill/geocoding",
+    summary="동 centroid에 뭉친 매물 좌표를 parcel 단위로 재지오코딩",
+)
+async def backfill_geocoding(
+    dry_run: bool = Query(default=True, description="true면 DB 변경 없이 결과만 반환."),
+    limit: int = Query(default=200, ge=1, le=5000),
+    min_cluster: int = Query(default=2, ge=2, le=500,
+                              description="이 수 이상 누적된 location만 대상."),
+    concurrency: int = Query(default=10, ge=1, le=30),
+) -> dict:
+    return await _backfill_geocoding_run(
+        dry_run=dry_run, limit=limit,
+        min_cluster=min_cluster, concurrency=concurrency,
+    )

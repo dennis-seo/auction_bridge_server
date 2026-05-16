@@ -38,7 +38,8 @@ class TestNormalizeRealty:
         assert item.cltr_mng_no == "2022-0100-002855"
         assert item.pbct_cdtn_no == 3912726
         assert item.title == "경기도 평택시 장당동 483-6 201호 근린생활시설"
-        assert item.address == "경기도 평택시 장당동"
+        # parcel level: title의 지번 (483-6)이 행정주소에 결합됨
+        assert item.address == "경기도 평택시 장당동 483-6"
         assert item.region_sido == "경기도"
         assert item.region_sigungu == "평택시"
         assert item.region_emd == "장당동"

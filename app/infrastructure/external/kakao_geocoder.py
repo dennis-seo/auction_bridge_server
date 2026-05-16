@@ -87,9 +87,33 @@ class KakaoGeocoder:
             return (None, None)
 
         first = docs[0]
+        if not _is_parcel_level(first):
+            # 행정구역 centroid 응답 거부 — 같은 동 매물이 한 점으로 뭉치는 것을 차단.
+            logger.info(
+                "Kakao geocoder returned region-level match for %r — skipping",
+                address,
+            )
+            return (None, None)
         try:
             lng = float(first["x"])
             lat = float(first["y"])
         except (KeyError, TypeError, ValueError):
             return (None, None)
         return (lng, lat)
+
+
+def _is_parcel_level(doc: dict) -> bool:
+    """카카오 응답 1건이 동(洞) centroid가 아니라 실제 지번/도로명 좌표인지 판단.
+
+    - address.address_type 가 "REGION" 이면 행정구역 centroid → 거부
+    - address.main_address_no 가 있거나 road_address 가 존재하면 parcel 단위
+    """
+    addr = doc.get("address") or {}
+    road = doc.get("road_address") or {}
+    if road:
+        return True
+    addr_type = (addr.get("address_type") or "").strip().upper()
+    if addr_type == "REGION":
+        return False
+    main_no = (addr.get("main_address_no") or "").strip()
+    return bool(main_no and main_no != "0")

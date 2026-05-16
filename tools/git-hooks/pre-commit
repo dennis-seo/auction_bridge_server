@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Auto-rebuild docs/ HTML guides when their sources are staged.
+#
+# Trigger files:
+#   onbid-api-guide.html  ← app/docs/*.docx, tools/build_onbid_guide.py
+#   server-api-guide.html ← app/api/**/*.py, app/domain/**/*.py, main.py,
+#                           tools/build_server_guide.py
+#
+# Activation (one-time):
+#   git config core.hooksPath tools/git-hooks
+#
+# To bypass occasionally (e.g. mid-WIP commit):
+#   git commit --no-verify
+set -eu
+
+# venv python (Windows / POSIX both supported)
+if [ -x .venv/Scripts/python.exe ]; then
+  PY=".venv/Scripts/python.exe"
+elif [ -x .venv/bin/python ]; then
+  PY=".venv/bin/python"
+else
+  PY="python"
+fi
+
+# core.quotepath=false로 한글 등 비-ASCII 파일명을 raw로 받는다.
+# 기본값 true면 "app/docs/\355\231..." 같이 quoted라 case/grep 매칭이 깨진다.
+staged=$(git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR)
+
+# 트리거 매핑 — grep으로 일괄 판정 (bash 3.x의 ** 미지원 회피 + quoted 처리 회피)
+needs_onbid=0
+needs_server=0
+if echo "$staged" | grep -qE '^app/docs/.*\.docx$|^tools/build_onbid_guide\.py$'; then
+  needs_onbid=1
+fi
+if echo "$staged" | grep -qE '^(app/api/|app/domain/).*\.py$|^main\.py$|^tools/build_server_guide\.py$'; then
+  needs_server=1
+fi
+
+if [ "$needs_onbid" -eq 0 ] && [ "$needs_server" -eq 0 ]; then
+  exit 0
+fi
+
+echo "[pre-commit] regenerating HTML guides…"
+
+if [ "$needs_onbid" -eq 1 ]; then
+  "$PY" tools/build_onbid_guide.py
+  git add docs/onbid-api-guide.html
+fi
+
+if [ "$needs_server" -eq 1 ]; then
+  "$PY" tools/build_server_guide.py
+  git add docs/server-api-guide.html
+fi
+
+exit 0

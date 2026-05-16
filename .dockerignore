@@ -1,0 +1,31 @@
+# Secrets — 절대 image에 들어가면 안 됨
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local dev
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+
+# Build artifacts
+deploy/env.runtime.yaml
+*.egg-info/
+dist/
+build/
+
+# Docs and tests (옵션 — 이미지 슬림화)
+docs/
+tests/

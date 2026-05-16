@@ -68,6 +68,7 @@ class AuctionORM(Base):
     pbct_cdtn_no: Mapped[int | None] = mapped_column(BigInteger)
     onbid_cltr_no: Mapped[int | None] = mapped_column(BigInteger)
     onbid_pbanc_no: Mapped[int | None] = mapped_column(BigInteger)
+    pbanc_mng_no: Mapped[str | None] = mapped_column(String(40))
     pbct_no: Mapped[int | None] = mapped_column(BigInteger)
     pbct_nsq: Mapped[str | None] = mapped_column(String(3))
     pbct_sn: Mapped[str | None] = mapped_column(String(5))
@@ -142,6 +143,9 @@ class AuctionORM(Base):
     thumbnail_url: Mapped[str | None] = mapped_column(String(500))
     image_urls: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, server_default="[]"
+    )
+    bid_info: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
     )
 
     correction_yn: Mapped[bool] = mapped_column(

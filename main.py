@@ -1,29 +1,13 @@
 import logging
-from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_v1_router
 from app.core.config import get_settings
-from app.services.scheduler import build_scheduler
 
 logger = logging.getLogger(__name__)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    sched = build_scheduler()
-    if sched is not None:
-        sched.start()
-        next_run = sched.get_job("daily_onbid_ingest").next_run_time
-        logger.info("Scheduler started. Next daily Onbid ingest: %s", next_run)
-    try:
-        yield
-    finally:
-        if sched is not None:
-            sched.shutdown(wait=False)
-            logger.info("Scheduler stopped.")
 
 
 def create_app() -> FastAPI:
@@ -33,12 +17,13 @@ def create_app() -> FastAPI:
         title="AuctionBridge API",
         description="대한민국 법원 경매 / 캠코 온비드 통합 API",
         version="0.1.0",
-        lifespan=lifespan,
     )
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
+        # Vercel preview 같은 hash 기반 동적 origin 매칭. 비어있으면 None 으로 패스.
+        allow_origin_regex=settings.CORS_ORIGIN_REGEX or None,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -60,9 +45,10 @@ if __name__ == "__main__":
     import uvicorn
 
     settings = get_settings()
+    port = int(os.environ.get("PORT", settings.APP_PORT))
     uvicorn.run(
         "main:app",
         host=settings.APP_HOST,
-        port=settings.APP_PORT,
+        port=port,
         reload=settings.APP_DEBUG,
     )

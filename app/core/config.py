@@ -37,17 +37,37 @@ class Settings(BaseSettings):
     ONBID_SERVICE_KEY: str = ""
 
     # CORS
+    # 정확한 매칭이 필요한 origin 들 — 콤마 구분
     CORS_ORIGINS: str = "http://localhost:3000"
+    # hash 기반 동적 origin (예: Vercel preview) 매칭용 정규식.
+    # 비어있으면 무시. 예: r"^https://auction-bridge.*\.vercel\.app$"
+    CORS_ORIGIN_REGEX: str = ""
 
-    # Scheduler — 일 1회 새벽 배치
-    SCHEDULER_ENABLED: bool = False
-    SCHEDULER_HOUR_KST: int = 4   # 매일 04시 (KST)
-    SCHEDULER_MINUTE_KST: int = 0
-    SCHEDULER_PAGES_PER_ASSET: int = 20      # 자산타입별 페이지 수
-    SCHEDULER_NUM_OF_ROWS: int = 200         # 페이지당 행
-    SCHEDULER_BID_RESULT_LIMIT: int = 200    # 입찰결과 보강 1회 한도
-    SCHEDULER_IMAGE_LIMIT: int = 0           # 이미지 보강 1회 한도 (0=skip; quota 보존)
-    SCHEDULER_BACKFILL_LIMIT: int = 50       # 회차 누락 backfill 1회 한도 (0=skip)
+    # Daily ingest 작업 파라미터 (외부 cron이 트리거)
+    # prpt_div_cd별로 페이징하므로 (자산타입 × prpt_div_cd) 단위로 적용된다.
+    # 일일 1000건/서비스 한도: 3 자산 × 7 카테고리 × 50 페이지 = 1050 (상한), 실제로는
+    # has_more=false로 일찍 종료되는 카테고리가 많아 200~500건 수준.
+    SCHEDULER_PAGES_PER_ASSET: int = 50      # 자산타입 × prpt_div_cd당 페이지 수
+    SCHEDULER_NUM_OF_ROWS: int = 500         # 페이지당 행
+    # #8 입찰결과목록 일괄 보강 (cltrTypeCd 3종 × 페이지)
+    SCHEDULER_BID_RESULT_LIST_DAYS: int = 2          # 개찰일자 lookback (어제~오늘 = 2)
+    SCHEDULER_BID_RESULT_LIST_MAX_PAGES: int = 20    # 자산타입별 최대 페이지
+    # #9 fallback (#8 매칭 누락분만 처리, 0이면 skip)
+    SCHEDULER_BID_RESULT_LIMIT: int = 50
+    # 이미지 보강 (0 = skip; quota 보존)
+    SCHEDULER_IMAGE_LIMIT: int = 100         # 부동산 사진 (#4)
+    SCHEDULER_MOVABLE_IMAGE_LIMIT: int = 50  # 동산 사진 (#5)
+    # #7 입찰정보 보강 — 매물별 1콜, 일 1000건 한도 안에서
+    SCHEDULER_BID_INFO_LIMIT: int = 100
+    # D안 — 공고 API 체인으로 누락 회차 보강
+    # Phase A: pbanc_mng_no 매핑 해결 (active 매물 중 NULL인 것 N건 처리)
+    SCHEDULER_PBANC_RESOLVE_LIMIT: int = 200
+    # Phase B: 공고 단위 회차 보강 (해결된 pbanc_mng_no 그룹 N개 처리)
+    SCHEDULER_PBANC_ENRICH_LIMIT: int = 100
+
+    # Cloud Scheduler → Cloud Run 인증 (OIDC)
+    CRON_SERVICE_ACCOUNT_EMAIL: str = ""     # Cloud Scheduler가 사용하는 SA 이메일
+    CRON_AUDIENCE: str = ""                  # 보통 Cloud Run 서비스 URL
 
     # 지오코딩 동시성
     GEOCODE_CONCURRENCY: int = 10

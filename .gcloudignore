@@ -1,0 +1,50 @@
+# gcloudignore — Cloud Build로 업로드할 때 제외할 파일
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Local secrets / env (절대 이미지에 포함 X — Cloud Run은 env-vars-file로 주입)
+.env
+.env.*
+!.env.example
+deploy/env.runtime.yaml
+
+# Docs / dev
+README.md
+docs/
+
+# Tests
+tests/
+
+# Local DB / migrations 산출물
+alembic/versions/__pycache__/
+
+# Misc
+*.log

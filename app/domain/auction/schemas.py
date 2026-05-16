@@ -341,6 +341,7 @@ class AuctionUpsertItem(BaseModel):
     pbct_cdtn_no: int
     onbid_cltr_no: int | None = None
     onbid_pbanc_no: int | None = None
+    pbanc_mng_no: str | None = None
     pbct_no: int | None = None
     pbct_nsq: str | None = None
     pbct_sn: str | None = None
@@ -453,3 +454,159 @@ class BBoxQuery(BaseModel):
         if self.min_lat >= self.max_lat:
             raise ValueError("min_lat must be < max_lat")
         return self
+
+
+# =====================================================================
+# Vehicle list / stats (asset_type=vehicle 전용)
+# =====================================================================
+class VehicleListItem(BaseModel):
+    """자동차 리스트 카드용 페이로드 — 차량 특화 필드 포함."""
+    id: int
+    source: AuctionSource
+    status: AuctionStatus
+    title: str | None = None
+    region_sido: str | None = None
+    region_sigungu: str | None = None
+    appraisal_price: int | None = None
+    min_bid_price: int | None = None
+    bid_begin_at: datetime | None = None
+    bid_end_at: datetime | None = None
+    fee_rate: float | None = None
+    failed_count: int = 0
+    thumbnail_url: str | None = None
+
+    vehicle_category: VehicleCategory
+    maker: str | None = None
+    model_name: str | None = None
+    year_model: str | None = None
+    mileage_km: int | None = None
+    displacement_cc: int | None = None
+    transmission: str | None = None
+    fuel: str | None = None
+
+
+class VehicleListResponse(BaseModel):
+    items: list[VehicleListItem]
+    total: int = Field(description="필터 조건에 매칭되는 총 건수")
+    offset: int
+    limit: int
+
+
+class VehicleListQuery(BaseModel):
+    vehicle_category: VehicleCategory | None = None
+    maker: str | None = Field(default=None, max_length=50)
+    fuel: str | None = Field(default=None, max_length=20)
+    transmission: str | None = Field(default=None, max_length=20)
+    year_model_min: str | None = Field(default=None, pattern=r"^\d{4}$")
+    year_model_max: str | None = Field(default=None, pattern=r"^\d{4}$")
+    mileage_km_min: int | None = Field(default=None, ge=0)
+    mileage_km_max: int | None = Field(default=None, ge=0)
+    displacement_cc_min: int | None = Field(default=None, ge=0)
+    displacement_cc_max: int | None = Field(default=None, ge=0)
+    status: AuctionStatus | None = None
+    region_sido: str | None = Field(default=None, max_length=20)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class VehicleFacetCount(BaseModel):
+    key: str
+    label: str | None = None
+    count: int = Field(ge=0)
+
+
+class VehicleMakerCount(BaseModel):
+    maker: str
+    count: int = Field(ge=0)
+
+
+class VehicleYearBucket(BaseModel):
+    year_model: str
+    count: int = Field(ge=0)
+
+
+class VehicleStatsResponse(BaseModel):
+    total: int = Field(description="진행 중인(scheduled+ongoing) 차량 매물 수")
+    by_category: list[VehicleFacetCount]
+    by_fuel: list[VehicleFacetCount]
+    by_transmission: list[VehicleFacetCount]
+    by_maker_top: list[VehicleMakerCount]
+    by_year_model: list[VehicleYearBucket]
+
+
+# =====================================================================
+# Bid info (#7 OnbidCltrBidDtlSrvc2) — auctions.bid_info JSONB 정규화 스키마
+# =====================================================================
+class BidMethods(BaseModel):
+    """입찰 방법 가능 여부."""
+    collab_bid: bool | None = None              # collbBidPsblYn
+    proxy_bid: bool | None = None               # subtBidPsblYn
+    electronic_guarantee: bool | None = None    # eltrGrprUseYn
+    deposit_substitute_doc: bool | None = None  # tdpsSbtnDcmtYn
+    runner_up_application: bool | None = None   # nrnkAplyPsblYn
+    multi_bid: bool | None = None               # twtmGthrBidPsblYn
+    same_ip_bid: bool | None = None             # smnsIpDpcnBidBlcktYn
+
+
+class BidTerms(BaseModel):
+    """입찰 조건/비용."""
+    deposit_text: str | None = None             # pbctTdpsCont (예: "최저입찰가*5%")
+    payment_method: str | None = None           # pcmtPayMtdCont
+    payment_term: str | None = None             # pcmtPayTermCont
+    bid_validity_criterion: str | None = None   # bidVldCrtrCont
+    participation_fee: int | None = None        # ptctCmsn
+    failed_count_cumulative: int | None = None  # usbdNft
+
+
+class BidRestrictions(BaseModel):
+    """제한경쟁 입찰 조건 (입찰방식=제한경쟁일 때만 채워짐)."""
+    qualification: str | None = None    # qlfcLmtCdtnCont
+    region: str | None = None           # rgnLmtCdtnCont
+    etc: str | None = None              # etcLmtCdtnCont
+
+
+class AnnouncementMeta(BaseModel):
+    """공고 메타데이터."""
+    pbanc_mng_no: str | None = None     # pbancMngNo
+    pbanc_name: str | None = None       # onbidPbancNm
+
+
+class PreviousRoundBid(BaseModel):
+    """이전 회차 입찰 결과."""
+    pbct_nsq: str | None = None
+    pbct_sn: str | None = None
+    opened_at: datetime | None = None        # cltrOpbdDt
+    result_name: str | None = None           # pbctStatNm
+    min_bid_price_text: str | None = None    # lowstBidPrcIndctCont
+    winning_amount_text: str | None = None   # scfbAmt (VARCHAR — 복수 `|` 구분)
+    apsl_to_winning_ratio: float | None = None  # apslPrcCtrsLowstBidRto
+    lowest_to_winning_ratio: float | None = None  # frstCtrsLowstBidPrcRto
+
+
+class RoundBidSchedule(BaseModel):
+    """회차별 입찰 일정/장소."""
+    bid_mng_no: str | None = None
+    pbct_nsq: str | None = None
+    pbct_sn: str | None = None
+    bid_div: str | None = None              # bidDivNm
+    bid_begin_at: datetime | None = None    # cltrBidBgngDt
+    bid_end_at: datetime | None = None      # cltrBidEndDt
+    opened_at: datetime | None = None       # cltrOpbdDt
+    open_place: str | None = None           # pbctOpbdPlcCont
+    min_bid_price_text: str | None = None
+    sale_decision_at: datetime | None = None  # cltrDodispDt (압류재산 only)
+
+
+class BidInfo(BaseModel):
+    """auctions.bid_info JSONB에 저장되는 정규화 스키마.
+
+    원본 #7 응답에서 클라가 매물 상세 화면에 표시할 6개 묶음만 발췌.
+    조건부 필드(평가방식/적정최고가/수의계약/제안서평가 등)는 raw로만 보존.
+    """
+    methods: BidMethods = Field(default_factory=BidMethods)
+    terms: BidTerms = Field(default_factory=BidTerms)
+    restrictions: BidRestrictions = Field(default_factory=BidRestrictions)
+    announcement: AnnouncementMeta = Field(default_factory=AnnouncementMeta)
+    previous_rounds: list[PreviousRoundBid] = Field(default_factory=list)
+    round_schedules: list[RoundBidSchedule] = Field(default_factory=list)
+    raw: dict[str, Any] = Field(default_factory=dict)

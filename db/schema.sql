@@ -187,6 +187,7 @@ CREATE TABLE auctions (
     dtbt_rqr_edtm           VARCHAR(4000),                 -- 배분요구종기
     thumbnail_url           VARCHAR(500),                  -- thnlImgUrlAdr
     image_urls              JSONB NOT NULL DEFAULT '[]'::jsonb,  -- 상세 API potoUrlList
+    bid_info                JSONB NOT NULL DEFAULT '{}'::jsonb,  -- #7 입찰정보 getCltrBidInf2 응답
 
     correction_yn           BOOLEAN NOT NULL DEFAULT FALSE,
     modified_at             TIMESTAMPTZ,                   -- mdfcnDt

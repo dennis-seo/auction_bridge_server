@@ -11,20 +11,31 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.domain.auction.repository import AuctionRepository
+from app.domain.auction.repository import (
+    AuctionRepository,
+    AuctionSiblingMeta,
+)
 from app.domain.auction.schemas import (
+    AnnouncementMeta,
     AssetType,
     AuctionSource,
     AuctionStatus,
     AuctionUpsertItem,
+    BidInfo,
+    BidMethods,
+    BidRestrictions,
+    BidTerms,
     MovableAttrs,
+    PreviousRoundBid,
     PropertyCategory,
     RealtyAttrs,
+    RoundBidSchedule,
     VehicleAttrs,
     VehicleCategory,
 )
 from app.infrastructure.external.kakao_geocoder import KakaoGeocoder
 from app.infrastructure.external.onbid_client import (
+    CLTR_TYPE_CD,
     OnbidAPIError,
     OnbidAssetService,
     OnbidClient,
@@ -420,6 +431,67 @@ _NORMALIZERS = {
 }
 
 
+def _normalize_pbanc_cltr_item(
+    raw: dict[str, Any],
+    sibling: AuctionSiblingMeta,
+    pbanc_mng_no: str,
+) -> AuctionUpsertItem | None:
+    """공고상세 물건정보(getPbancCltrInf2) 응답 1행 → AuctionUpsertItem.
+
+    응답에 부재한 cltr-stable 필드(주소·지오·PNU·기관·썸네일·asset_type)는
+    sibling 메타에서 그대로 상속한다. 같은 cltr_mng_no의 기존 회차가 보유하고
+    있는 값이라 위치·카테고리는 회차가 바뀌어도 동일하다.
+    """
+    cltr = str_or_none(raw.get("cltrMngNo"))
+    pbct = parse_int(raw.get("pbctCdtnNo"))
+    if not cltr or pbct is None:
+        return None
+
+    fields: dict[str, Any] = {
+        f: parser(raw.get(k)) for f, k, parser in _COMMON_FIELD_MAP
+    }
+    # 공고 응답에 없는 cltr-stable 필드는 sibling 값으로 채움 (None일 때만)
+    for sib_field, sib_val in (
+        ("ltno_pnu", sibling.ltno_pnu),
+        ("rdnm_pnu", sibling.rdnm_pnu),
+        ("thumbnail_url", sibling.thumbnail_url),
+        ("request_org_nm", sibling.request_org_nm),
+        ("announce_org_nm", sibling.announce_org_nm),
+    ):
+        if fields.get(sib_field) is None:
+            fields[sib_field] = sib_val
+
+    item = AuctionUpsertItem(
+        source=AuctionSource.ONBID,
+        asset_type=sibling.asset_type,
+        status=map_status(raw.get("pbctStatCd"), raw.get("pbctStatNm")),
+        cltr_mng_no=cltr,
+        pbct_cdtn_no=pbct,
+        pbanc_mng_no=pbanc_mng_no,
+        region_sido=sibling.region_sido,
+        region_sigungu=sibling.region_sigungu,
+        region_emd=sibling.region_emd,
+        address=sibling.address,
+        lat=sibling.lat,
+        lng=sibling.lng,
+        failed_count=parse_int(raw.get("usbdNft")) or 0,
+        correction_yn=bool(parse_yn(raw.get("crtnYn"))),
+        raw=raw,
+        **fields,
+    )
+
+    if sibling.asset_type == AssetType.REALTY:
+        item.realty = RealtyAttrs(
+            property_category=sibling.property_category or PropertyCategory.ETC,
+        )
+    elif sibling.asset_type == AssetType.VEHICLE:
+        item.vehicle = VehicleAttrs()
+    elif sibling.asset_type == AssetType.MOVABLE:
+        item.movable = MovableAttrs()
+
+    return item
+
+
 # =====================================================================
 # Service
 # =====================================================================
@@ -432,6 +504,16 @@ class IngestStats:
     updated: int = 0
     pages: int = 0
     by_asset: dict[str, int] = field(default_factory=dict)
+    by_prpt_div: dict[str, int] = field(default_factory=dict)
+
+
+def _accumulate(into: IngestStats, src: IngestStats) -> None:
+    into.fetched += src.fetched
+    into.normalized += src.normalized
+    into.geocoded += src.geocoded
+    into.inserted += src.inserted
+    into.updated += src.updated
+    into.pages += src.pages
 
 
 @dataclass(slots=True)
@@ -483,6 +565,94 @@ def _split_amounts(s: Any) -> list[int]:
         if n is not None:
             out.append(n)
     return out
+
+
+def _iter_list_block(block: Any) -> list[dict[str, Any]]:
+    """Onbid 응답의 array 필드는 list / dict / None 모두 가능 — 통일."""
+    if block is None:
+        return []
+    if isinstance(block, list):
+        return [el for el in block if isinstance(el, dict)]
+    if isinstance(block, dict):
+        return [block]
+    return []
+
+
+def normalize_bid_info(raw: dict[str, Any]) -> BidInfo:
+    """#7 응답 dict → 정규화된 BidInfo 모델.
+
+    빈 응답이어도 BidInfo (모든 필드 default) 를 반환. 호출자는 `bid_info.raw`로
+    원본 보존을 확인할 수 있다.
+    """
+    if not isinstance(raw, dict):
+        return BidInfo()
+
+    methods = BidMethods(
+        collab_bid=parse_yn(raw.get("collbBidPsblYn")),
+        proxy_bid=parse_yn(raw.get("subtBidPsblYn")),
+        electronic_guarantee=parse_yn(raw.get("eltrGrprUseYn")),
+        deposit_substitute_doc=parse_yn(raw.get("tdpsSbtnDcmtYn")),
+        runner_up_application=parse_yn(raw.get("nrnkAplyPsblYn")),
+        multi_bid=parse_yn(raw.get("twtmGthrBidPsblYn")),
+        same_ip_bid=parse_yn(raw.get("smnsIpDpcnBidBlcktYn")),
+    )
+    terms = BidTerms(
+        deposit_text=str_or_none(raw.get("pbctTdpsCont")),
+        payment_method=str_or_none(raw.get("pcmtPayMtdCont")),
+        payment_term=str_or_none(raw.get("pcmtPayTermCont")),
+        bid_validity_criterion=str_or_none(raw.get("bidVldCrtrCont")),
+        participation_fee=parse_int(raw.get("ptctCmsn")),
+        failed_count_cumulative=parse_int(raw.get("usbdNft")),
+    )
+    restrictions = BidRestrictions(
+        qualification=str_or_none(raw.get("qlfcLmtCdtnCont")),
+        region=str_or_none(raw.get("rgnLmtCdtnCont")),
+        etc=str_or_none(raw.get("etcLmtCdtnCont")),
+    )
+    announcement = AnnouncementMeta(
+        pbanc_mng_no=str_or_none(raw.get("pbancMngNo")),
+        pbanc_name=str_or_none(raw.get("onbidPbancNm")),
+    )
+
+    previous_rounds = [
+        PreviousRoundBid(
+            pbct_nsq=str_or_none(el.get("pbctNsq")),
+            pbct_sn=str_or_none(el.get("pbctsn")),
+            opened_at=parse_dt(el.get("cltrOpbdDt")),
+            result_name=str_or_none(el.get("pbctStatNm")),
+            min_bid_price_text=str_or_none(el.get("lowstBidPrcIndctCont")),
+            winning_amount_text=str_or_none(el.get("scfbAmt")),
+            apsl_to_winning_ratio=parse_float(el.get("apslPrcCtrsLowstBidRto")),
+            lowest_to_winning_ratio=parse_float(el.get("frstCtrsLowstBidPrcRto")),
+        )
+        for el in _iter_list_block(raw.get("prcnBidClgList"))
+    ]
+
+    round_schedules = [
+        RoundBidSchedule(
+            bid_mng_no=str_or_none(el.get("bidMngNo")),
+            pbct_nsq=str_or_none(el.get("pbctNsq")),
+            pbct_sn=str_or_none(el.get("pbctsn")),
+            bid_div=str_or_none(el.get("bidDivNm")),
+            bid_begin_at=parse_dt(el.get("cltrBidBgngDt")),
+            bid_end_at=parse_dt(el.get("cltrBidEndDt")),
+            opened_at=parse_dt(el.get("cltrOpbdDt")),
+            open_place=str_or_none(el.get("pbctOpbdPlcCont")),
+            min_bid_price_text=str_or_none(el.get("lowstBidPrcIndctCont")),
+            sale_decision_at=parse_dt(el.get("cltrDodispDt")),
+        )
+        for el in _iter_list_block(raw.get("cseqBidInfClgList"))
+    ]
+
+    return BidInfo(
+        methods=methods,
+        terms=terms,
+        restrictions=restrictions,
+        announcement=announcement,
+        previous_rounds=previous_rounds,
+        round_schedules=round_schedules,
+        raw=raw,
+    )
 
 
 def normalize_bid_result(raw: dict[str, Any]) -> BidResultPayload | None:
@@ -542,42 +712,63 @@ class OnbidIngestService:
         prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
         pvct_trgt_yn: str = "N",
     ) -> IngestStats:
-        return await self._run(
-            asset=asset,
-            max_pages=max_pages,
-            num_of_rows=num_of_rows,
-            prpt_div_cd=prpt_div_cd,
-            pvct_trgt_yn=pvct_trgt_yn,
-        )
+        codes = (prpt_div_cd,) if isinstance(prpt_div_cd, str) else tuple(prpt_div_cd)
+        total = IngestStats()
+        for code in codes:
+            try:
+                s = await self._run(
+                    asset=asset,
+                    max_pages=max_pages,
+                    num_of_rows=num_of_rows,
+                    prpt_div_cd=code,
+                    pvct_trgt_yn=pvct_trgt_yn,
+                )
+            except OnbidQuotaExceeded as e:
+                logger.warning(
+                    "Quota exceeded — stopping run_one at %s/%s: %s",
+                    asset.value, code, e,
+                )
+                break
+            _accumulate(total, s)
+            total.by_prpt_div[code] = total.by_prpt_div.get(code, 0) + s.normalized
+        total.by_asset[asset.value] = total.normalized
+        return total
 
     async def run_full(
         self,
         *,
         max_pages_per_asset: int = 50,
-        num_of_rows: int = 200,
+        num_of_rows: int = 500,
         prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
         pvct_trgt_yn: str = "N",
     ) -> IngestStats:
+        codes = (prpt_div_cd,) if isinstance(prpt_div_cd, str) else tuple(prpt_div_cd)
         total = IngestStats()
+        quota_hit = False
         for asset in OnbidAssetService:
-            try:
-                s = await self._run(
-                    asset=asset,
-                    max_pages=max_pages_per_asset,
-                    num_of_rows=num_of_rows,
-                    prpt_div_cd=prpt_div_cd,
-                    pvct_trgt_yn=pvct_trgt_yn,
-                )
-            except OnbidQuotaExceeded as e:
-                logger.warning("Quota exceeded — stopping run_full at %s: %s", asset.value, e)
+            asset_total = 0
+            for code in codes:
+                try:
+                    s = await self._run(
+                        asset=asset,
+                        max_pages=max_pages_per_asset,
+                        num_of_rows=num_of_rows,
+                        prpt_div_cd=code,
+                        pvct_trgt_yn=pvct_trgt_yn,
+                    )
+                except OnbidQuotaExceeded as e:
+                    logger.warning(
+                        "Quota exceeded — stopping run_full at %s/%s: %s",
+                        asset.value, code, e,
+                    )
+                    quota_hit = True
+                    break
+                _accumulate(total, s)
+                asset_total += s.normalized
+                total.by_prpt_div[code] = total.by_prpt_div.get(code, 0) + s.normalized
+            total.by_asset[asset.value] = asset_total
+            if quota_hit:
                 break
-            total.fetched += s.fetched
-            total.normalized += s.normalized
-            total.geocoded += s.geocoded
-            total.inserted += s.inserted
-            total.updated += s.updated
-            total.pages += s.pages
-            total.by_asset[asset.value] = s.normalized
         return total
 
     async def _run(
@@ -618,10 +809,10 @@ class OnbidIngestService:
                 stats.inserted += ins
                 stats.updated += upd
                 logger.info(
-                    "ingest asset=%s page=%d fetched=%d normalized=%d geocoded=%d "
-                    "inserted=%d updated=%d",
-                    asset.value, page.page_no, len(page.items), len(normalized),
-                    stats.geocoded, ins, upd,
+                    "ingest asset=%s prpt_div=%s page=%d fetched=%d normalized=%d "
+                    "geocoded=%d inserted=%d updated=%d",
+                    asset.value, prpt_div_cd, page.page_no, len(page.items),
+                    len(normalized), stats.geocoded, ins, upd,
                 )
         return stats
 
@@ -642,106 +833,6 @@ class OnbidIngestService:
 
         results = await asyncio.gather(*[_one(i) for i in items])
         return sum(1 for r in results if r)
-
-    async def backfill_cltr_mng_no(
-        self,
-        cltr_mng_no: str,
-        asset: OnbidAssetService,
-        *,
-        prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
-        num_of_rows: int = 100,
-    ) -> IngestStats:
-        """단일 cltrMngNo의 모든 회차를 list API로 재조회 + upsert.
-
-        정기 ingest의 페이지/쿼터 한도로 누락된 회차(예: 1회차 row가
-        후속 회차들과 다른 페이지에 있어 잘린 경우)를 보강한다.
-        pvctTrgtYn N/Y 양쪽 모두 조회해 어느 분류에 있어도 수집.
-        """
-        stats = IngestStats()
-        normalizer = _NORMALIZERS[asset]
-        seen: set[tuple[str, int]] = set()
-
-        for pvct in ("N", "Y"):
-            try:
-                async for page in self._client.iter_assets(
-                    asset,
-                    prpt_div_cd=prpt_div_cd,
-                    pvct_trgt_yn=pvct,
-                    num_of_rows=num_of_rows,
-                    extra={"cltrMngNo": cltr_mng_no},
-                ):
-                    stats.pages += 1
-                    stats.fetched += len(page.items)
-                    normalized: list[AuctionUpsertItem] = []
-                    for raw in page.items:
-                        # cltrMngNo 검색 미지원 API일 경우 전체 페이지가 돌아옴 — 클라이언트 측 필터.
-                        if str_or_none(raw.get("cltrMngNo")) != cltr_mng_no:
-                            continue
-                        item = normalizer(raw)
-                        if item is None:
-                            continue
-                        key = (item.cltr_mng_no, item.pbct_cdtn_no)
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        normalized.append(item)
-                    stats.normalized += len(normalized)
-
-                    if asset == OnbidAssetService.REALTY:
-                        stats.geocoded += await self._geocode_batch(normalized)
-
-                    if normalized:
-                        ins, upd = await self._repo.upsert_many(normalized)
-                        stats.inserted += ins
-                        stats.updated += upd
-            except OnbidQuotaExceeded as e:
-                logger.warning(
-                    "backfill quota exceeded — cltr=%s pvct=%s: %s",
-                    cltr_mng_no, pvct, e,
-                )
-                break
-            except OnbidAPIError as e:
-                logger.info(
-                    "backfill skip cltr=%s pvct=%s: %s",
-                    cltr_mng_no, pvct, e,
-                )
-        logger.info(
-            "backfill cltr=%s asset=%s pages=%d fetched=%d inserted=%d updated=%d",
-            cltr_mng_no, asset.value, stats.pages, stats.fetched,
-            stats.inserted, stats.updated,
-        )
-        return stats
-
-    async def run_backfill_rounds(self, *, limit: int = 50) -> IngestStats:
-        """회차 누락이 의심되는 cltrMngNo N건에 대해 backfill 일괄 실행.
-
-        repo가 제공하는 후보 목록(=동일 cltr 내 row 수가 적거나 pbct_nsq가
-        후속 회차로만 채워진 매물)을 순회. asset_type을 매물별로 알기 위해
-        후보 튜플은 (cltr_mng_no, asset_type)으로 받는다.
-        """
-        total = IngestStats()
-        targets = await self._repo.list_cltrs_needing_round_backfill(limit=limit)
-        asset_by_type = {
-            AssetType.REALTY:  OnbidAssetService.REALTY,
-            AssetType.MOVABLE: OnbidAssetService.MOVABLE,
-            AssetType.VEHICLE: OnbidAssetService.VEHICLE,
-        }
-        for cltr, asset_type in targets:
-            asset = asset_by_type.get(asset_type)
-            if asset is None:
-                continue
-            try:
-                s = await self.backfill_cltr_mng_no(cltr, asset)
-            except OnbidQuotaExceeded as e:
-                logger.warning("run_backfill_rounds halted by quota: %s", e)
-                break
-            total.fetched += s.fetched
-            total.normalized += s.normalized
-            total.geocoded += s.geocoded
-            total.inserted += s.inserted
-            total.updated += s.updated
-            total.pages += s.pages
-        return total
 
     async def enrich_bid_results(self, *, limit: int = 50) -> EnrichStats:
         """bid_end_at 지난 ongoing 매물에 대해 입찰결과상세(#9)를 호출해 결과를 적재.
@@ -773,28 +864,304 @@ class OnbidIngestService:
         return stats
 
     async def enrich_realty_image_urls(self, *, limit: int = 50) -> EnrichStats:
-        """이미지가 비어 있는 부동산 N건에 대해 상세 API를 호출해 image_urls 보강.
+        """이미지가 비어 있는 부동산 N건에 대해 상세 API(#4)를 호출해 image_urls 보강.
 
         일일 쿼터 1000/서비스 고려해 호출자가 limit 제어. 부분 실패는 카운트만.
         """
+        return await self._enrich_image_urls(
+            limit=limit,
+            list_fn=self._repo.list_realty_missing_images,
+            detail_fn=self._client.get_realty_detail,
+            asset_label="realty",
+        )
+
+    async def enrich_movable_image_urls(self, *, limit: int = 50) -> EnrichStats:
+        """이미지가 비어 있는 동산 N건에 대해 상세 API(#5)를 호출해 image_urls 보강."""
+        return await self._enrich_image_urls(
+            limit=limit,
+            list_fn=self._repo.list_movable_missing_images,
+            detail_fn=self._client.get_movable_detail,
+            asset_label="movable",
+        )
+
+    async def enrich_bid_info(self, *, limit: int = 50) -> EnrichStats:
+        """#7 입찰정보로 매물 1건당 1콜 → 정규화된 BidInfo dict를 auctions.bid_info에 저장.
+
+        원본 raw는 `bid_info.raw`에 보존. scheduled/ongoing 매물 중 bid_info가
+        비어있는 N건만 처리. 일일 1,000/일 한도 안에서 호출자가 limit 제어.
+        """
         stats = EnrichStats()
-        targets = await self._repo.list_realty_missing_images(limit=limit)
+        targets = await self._repo.list_auctions_missing_bid_info(limit=limit)
         stats.targeted = len(targets)
         for auction_id, cltr, pbct in targets:
             stats.api_calls += 1
             try:
-                detail = await self._client.get_realty_detail(
-                    cltr_mng_no=cltr, pbct_cdtn_no=pbct
+                detail = await self._client.get_bid_info(
+                    cltr_mng_no=cltr, pbct_cdtn_no=pbct,
                 )
             except OnbidQuotaExceeded as e:
-                logger.warning("enrich quota exceeded — stopping: %s", e)
+                logger.warning("bid_info enrich quota exceeded — stopping: %s", e)
                 break
             except OnbidAPIError as e:
-                logger.info("enrich skip auction_id=%d: %s", auction_id, e)
+                logger.info(
+                    "bid_info enrich skip auction_id=%d: %s", auction_id, e,
+                )
+                stats.failed += 1
+                continue
+            if not detail:
+                stats.failed += 1
+                continue
+            bid_info = normalize_bid_info(detail)
+            await self._repo.update_bid_info(
+                auction_id, bid_info.model_dump(mode="json"),
+            )
+            stats.enriched += 1
+        return stats
+
+    async def _enrich_image_urls(
+        self,
+        *,
+        limit: int,
+        list_fn,
+        detail_fn,
+        asset_label: str,
+    ) -> EnrichStats:
+        stats = EnrichStats()
+        targets = await list_fn(limit=limit)
+        stats.targeted = len(targets)
+        for auction_id, cltr, pbct in targets:
+            stats.api_calls += 1
+            try:
+                detail = await detail_fn(cltr_mng_no=cltr, pbct_cdtn_no=pbct)
+            except OnbidQuotaExceeded as e:
+                logger.warning(
+                    "%s image enrich quota exceeded — stopping: %s", asset_label, e
+                )
+                break
+            except OnbidAPIError as e:
+                logger.info(
+                    "%s image enrich skip auction_id=%d: %s", asset_label, auction_id, e
+                )
                 stats.failed += 1
                 continue
             urls = extract_image_urls(detail)
             if urls:
                 await self._repo.update_image_urls(auction_id, urls)
                 stats.enriched += 1
+        return stats
+
+    async def enrich_pbanc_mng_no(self, *, limit: int = 100) -> EnrichStats:
+        """Phase A: active onbid 매물 중 pbanc_mng_no가 NULL인 것들에 대해
+        getPbancList2를 호출해 매핑을 해결하고 DB에 캐시한다.
+
+        같은 asset_type × bidPrdYmd(yyyyMMdd)로 그룹화하여 호출을 절감.
+        bid_begin_at이 NULL인 매물은 검색 키가 없어 failed로 카운트.
+        """
+        stats = EnrichStats()
+        targets = await self._repo.list_auctions_missing_pbanc_mng_no(limit=limit)
+        stats.targeted = len(targets)
+        if not targets:
+            return stats
+
+        # (asset_type, yyyyMMdd) 단위 그룹화
+        buckets: dict[tuple[AssetType, str], list[Any]] = {}
+        for t in targets:
+            if t.bid_begin_at is None:
+                stats.failed += 1
+                continue
+            ymd = t.bid_begin_at.astimezone(KST).strftime("%Y%m%d")
+            buckets.setdefault((t.asset_type, ymd), []).append(t)
+
+        resolved: list[tuple[int, str]] = []
+        quota_hit = False
+        for (asset_type, ymd), bucket in buckets.items():
+            if quota_hit:
+                for _ in bucket:
+                    stats.failed += 1
+                continue
+            cltr_type_cd = CLTR_TYPE_CD[OnbidAssetService(asset_type.value)]
+            pbanc_map: dict[int, str] = {}
+            page_no = 1
+            max_pages = 10
+            while page_no <= max_pages:
+                stats.api_calls += 1
+                try:
+                    page = await self._client.list_announcements(
+                        cltr_type_cd=cltr_type_cd,
+                        prpt_div_cd=PrptDivCd.DEFAULT_INGEST,
+                        bid_prd_ymd_start=ymd,
+                        bid_prd_ymd_end=ymd,
+                        page_no=page_no,
+                        num_of_rows=500,
+                    )
+                except OnbidQuotaExceeded as e:
+                    logger.warning("pbanc resolve quota exceeded — stopping: %s", e)
+                    quota_hit = True
+                    break
+                except OnbidAPIError as e:
+                    logger.info(
+                        "pbanc resolve error asset=%s ymd=%s page=%d: %s",
+                        asset_type.value, ymd, page_no, e,
+                    )
+                    break
+                for it in page.items:
+                    onbid_no = parse_int(it.get("onbidPbancNo"))
+                    mng_no = str_or_none(it.get("pbancMngNo"))
+                    if onbid_no is not None and mng_no:
+                        pbanc_map[onbid_no] = mng_no
+                if not page.has_more:
+                    break
+                page_no += 1
+            for t in bucket:
+                mng = pbanc_map.get(t.onbid_pbanc_no)
+                if mng:
+                    resolved.append((t.auction_id, mng))
+                else:
+                    stats.failed += 1
+
+        if resolved:
+            n = await self._repo.update_pbanc_mng_no_batch(resolved)
+            stats.enriched = n
+            logger.info(
+                "pbanc resolve done — resolved=%d / targeted=%d", n, stats.targeted,
+            )
+        return stats
+
+    async def enrich_missing_rounds_via_pbanc(
+        self, *, limit: int = 50,
+    ) -> EnrichStats:
+        """Phase B: pbanc_mng_no가 알려진 공고 그룹에 대해 getPbancCltrInf2 호출 →
+        응답의 (cltr, pbct) 중 DB에 없는 회차만 골라 sibling 메타 상속 후 upsert.
+        """
+        stats = EnrichStats()
+        groups = await self._repo.list_pbanc_groups_for_round_enrich(limit=limit)
+        stats.targeted = len(groups)
+        if not groups:
+            return stats
+
+        new_items: list[AuctionUpsertItem] = []
+        for grp in groups:
+            stats.api_calls += 1
+            try:
+                page = await self._client.get_announcement_cltrs(
+                    pbanc_mng_no=grp.pbanc_mng_no, page_no=1, num_of_rows=500,
+                )
+            except OnbidQuotaExceeded as e:
+                logger.warning(
+                    "pbanc round enrich quota exceeded — stopping: %s", e,
+                )
+                break
+            except OnbidAPIError as e:
+                logger.info(
+                    "pbanc round enrich error pbanc=%s: %s", grp.pbanc_mng_no, e,
+                )
+                stats.failed += 1
+                continue
+            for raw in page.items:
+                cltr = str_or_none(raw.get("cltrMngNo"))
+                pbct = parse_int(raw.get("pbctCdtnNo"))
+                if not cltr or pbct is None:
+                    continue
+                if (cltr, pbct) in grp.existing_keys:
+                    continue
+                sibling = grp.siblings.get(cltr)
+                if sibling is None:
+                    continue
+                item = _normalize_pbanc_cltr_item(raw, sibling, grp.pbanc_mng_no)
+                if item is not None:
+                    new_items.append(item)
+
+        if new_items:
+            ins, upd = await self._repo.upsert_many(new_items)
+            stats.enriched = ins
+            logger.info(
+                "pbanc round enrich done — inserted=%d updated=%d / groups=%d",
+                ins, upd, stats.targeted,
+            )
+        return stats
+
+    async def enrich_bid_results_by_list(
+        self,
+        *,
+        days_lookback: int = 2,
+        num_of_rows: int = 100,
+        max_pages_per_combo: int = 20,
+        prpt_div_cd: str | tuple[str, ...] = PrptDivCd.DEFAULT_INGEST,
+    ) -> EnrichStats:
+        """#8 입찰결과목록으로 최근 개찰된 매물 결과를 일괄 보강.
+
+        cltrTypeCd(부동산/자동차/동산) × prptDivCd로 한 번에 100건씩 페이지 순회.
+        결과는 DB ongoing/scheduled 매물과 (cltr_mng_no, pbct_cdtn_no)로 매칭해서
+        upsert. #9 호출당 1건 보강 대비 호출 수 대폭 절감.
+
+        days_lookback=2면 어제~오늘 개찰 범위. 운영 권장 안전 마진.
+        """
+        stats = EnrichStats()
+        today = datetime.now(KST).date()
+        start = today - timedelta(days=max(0, days_lookback - 1))
+        opbd_start = start.strftime("%Y%m%d")
+        opbd_end = today.strftime("%Y%m%d")
+
+        for asset in OnbidAssetService:
+            cltr_type_cd = CLTR_TYPE_CD[asset]
+            page_no = 1
+            while page_no <= max_pages_per_combo:
+                stats.api_calls += 1
+                try:
+                    page = await self._client.list_bid_results(
+                        cltr_type_cd=cltr_type_cd,
+                        prpt_div_cd=prpt_div_cd,
+                        opbd_dt_start=opbd_start,
+                        opbd_dt_end=opbd_end,
+                        page_no=page_no,
+                        num_of_rows=num_of_rows,
+                    )
+                except OnbidQuotaExceeded as e:
+                    logger.warning(
+                        "bid_result list quota exceeded — stopping: %s", e
+                    )
+                    return stats
+                except OnbidAPIError as e:
+                    logger.info(
+                        "bid_result list error asset=%s page=%d: %s",
+                        asset.value, page_no, e,
+                    )
+                    break
+
+                if not page.items:
+                    break
+                stats.targeted += len(page.items)
+
+                # 결과 → 정규화 + 키 추출
+                payloads: list[BidResultPayload] = []
+                keys: list[tuple[str, int]] = []
+                for raw in page.items:
+                    payload = normalize_bid_result(raw)
+                    if payload is None:
+                        continue
+                    payloads.append(payload)
+                    keys.append((payload.cltr_mng_no, payload.pbct_cdtn_no))
+
+                if not payloads:
+                    if not page.has_more:
+                        break
+                    page_no += 1
+                    continue
+
+                id_map = await self._repo.lookup_active_auction_ids(keys)
+                for payload in payloads:
+                    aid = id_map.get((payload.cltr_mng_no, payload.pbct_cdtn_no))
+                    if aid is None:
+                        continue
+                    await self._repo.upsert_bid_result(aid, payload)
+                    stats.enriched += 1
+
+                logger.info(
+                    "bid_result list asset=%s page=%d items=%d matched=%d",
+                    asset.value, page_no, len(page.items),
+                    sum(1 for p in payloads if (p.cltr_mng_no, p.pbct_cdtn_no) in id_map),
+                )
+                if not page.has_more:
+                    break
+                page_no += 1
         return stats

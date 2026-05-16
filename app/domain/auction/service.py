@@ -4,6 +4,9 @@ from app.domain.auction.schemas import (
     AuctionListResponse,
     AuctionStatsResponse,
     BBoxQuery,
+    VehicleListQuery,
+    VehicleListResponse,
+    VehicleStatsResponse,
 )
 
 
@@ -30,3 +33,12 @@ class AuctionService:
 
     async def get_detail(self, auction_id: int) -> AuctionDetail | None:
         return await self._repo.get_by_id(auction_id)
+
+    async def list_vehicles(self, q: VehicleListQuery) -> VehicleListResponse:
+        items, total = await self._repo.list_vehicles(q)
+        return VehicleListResponse(
+            items=items, total=total, offset=q.offset, limit=q.limit,
+        )
+
+    async def get_vehicle_stats(self) -> VehicleStatsResponse:
+        return await self._repo.get_vehicle_stats()

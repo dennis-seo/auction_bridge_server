@@ -4,11 +4,16 @@ from __future__ import annotations
 from typing import Any
 
 from geoalchemy2.functions import ST_Intersects, ST_MakeEnvelope, ST_X, ST_Y
-from sqlalchemy import case, func, select, update
+from sqlalchemy import String, case, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.domain.auction.repository import AuctionRepository
+from app.domain.auction.repository import (
+    AuctionRepository,
+    AuctionSiblingMeta,
+    PbancEnrichGroup,
+    PbancResolveTarget,
+)
 from app.domain.auction.schemas import (
     ASSET_TYPE_LABELS_KO,
     PROPERTY_CATEGORY_LABELS_KO,
@@ -31,6 +36,12 @@ from app.domain.auction.schemas import (
     SourceStat,
     VehicleCategory,
     VehicleDetails,
+    VehicleFacetCount,
+    VehicleListItem,
+    VehicleListQuery,
+    VehicleMakerCount,
+    VehicleStatsResponse,
+    VehicleYearBucket,
 )
 from app.infrastructure.db.models import (
     AuctionBidResultORM,
@@ -146,51 +157,81 @@ class DBAuctionRepository(AuctionRepository):
     ) -> list[AuctionListItem]:
         envelope = ST_MakeEnvelope(min_lng, min_lat, max_lng, max_lat, 4326)
 
-        stmt = (
+        # 같은 물건(cltr_mng_no)의 여러 회차/차수 중 "대표 회차" 1건만 노출.
+        # 우선순위: ongoing → scheduled → sold → failed → cancelled.
+        # 동률 시 bid_end_at이 가장 임박한 회차를 선택.
+        status_priority = case(
+            (AuctionORM.status == AuctionStatus.ONGOING.value, 1),
+            (AuctionORM.status == AuctionStatus.SCHEDULED.value, 2),
+            (AuctionORM.status == AuctionStatus.SOLD.value, 3),
+            (AuctionORM.status == AuctionStatus.FAILED.value, 4),
+            (AuctionORM.status == AuctionStatus.CANCELLED.value, 5),
+            else_=99,
+        )
+        dedup_key = func.coalesce(
+            AuctionORM.cltr_mng_no,
+            AuctionORM.case_number,
+            func.cast(AuctionORM.id, String),
+        )
+
+        inner = (
             select(
-                AuctionORM.id,
-                AuctionORM.source,
-                AuctionORM.asset_type,
-                AuctionORM.status,
-                AuctionORM.title,
-                AuctionORM.address,
-                AuctionORM.region_sido,
-                AuctionORM.region_sigungu,
-                AuctionORM.appraisal_price,
-                AuctionORM.min_bid_price,
-                AuctionORM.bid_end_at,
-                AuctionORM.fee_rate,
-                AuctionORM.failed_count,
-                AuctionORM.thumbnail_url,
+                AuctionORM.id.label("id"),
+                AuctionORM.source.label("source"),
+                AuctionORM.asset_type.label("asset_type"),
+                AuctionORM.status.label("status"),
+                AuctionORM.title.label("title"),
+                AuctionORM.address.label("address"),
+                AuctionORM.region_sido.label("region_sido"),
+                AuctionORM.region_sigungu.label("region_sigungu"),
+                AuctionORM.appraisal_price.label("appraisal_price"),
+                AuctionORM.min_bid_price.label("min_bid_price"),
+                AuctionORM.bid_end_at.label("bid_end_at"),
+                AuctionORM.fee_rate.label("fee_rate"),
+                AuctionORM.failed_count.label("failed_count"),
+                AuctionORM.thumbnail_url.label("thumbnail_url"),
                 ST_X(AuctionORM.location).label("lng"),
                 ST_Y(AuctionORM.location).label("lat"),
             )
+            .distinct(dedup_key)
             .where(
                 AuctionORM.location.is_not(None),
                 ST_Intersects(AuctionORM.location, envelope),
             )
-            .order_by(AuctionORM.bid_end_at.asc().nullslast())
-            .limit(limit)
         )
 
         if asset_type is not None:
-            stmt = stmt.where(AuctionORM.asset_type == asset_type.value)
+            inner = inner.where(AuctionORM.asset_type == asset_type.value)
         if status is not None:
-            stmt = stmt.where(AuctionORM.status == status.value)
+            inner = inner.where(AuctionORM.status == status.value)
         if property_category is not None:
-            stmt = stmt.join(
+            inner = inner.join(
                 AuctionRealtyDetailsORM,
                 AuctionRealtyDetailsORM.auction_id == AuctionORM.id,
             ).where(
                 AuctionRealtyDetailsORM.property_category == property_category.value
             )
         if vehicle_category is not None:
-            stmt = stmt.join(
+            inner = inner.join(
                 AuctionVehicleDetailsORM,
                 AuctionVehicleDetailsORM.auction_id == AuctionORM.id,
             ).where(
                 AuctionVehicleDetailsORM.vehicle_category == vehicle_category.value
             )
+
+        inner = inner.order_by(
+            dedup_key,
+            status_priority,
+            AuctionORM.bid_end_at.asc().nullslast(),
+            AuctionORM.id,
+        )
+        sub = inner.subquery()
+
+        stmt = (
+            select(sub)
+            .order_by(sub.c.bid_end_at.asc().nullslast())
+            .limit(limit)
+        )
 
         async with self._session_factory() as session:
             result = await session.execute(stmt)
@@ -411,6 +452,11 @@ class DBAuctionRepository(AuctionRepository):
                 ),
                 else_=AuctionORM.image_urls,
             )
+            # realty list ingest는 pbanc_mng_no를 모르므로 늘 NULL. 별도 enrich로
+            # 해결된 매핑이 NULL로 덮이지 않도록 NULL-safe coalesce.
+            update_cols["pbanc_mng_no"] = func.coalesce(
+                stmt.excluded.pbanc_mng_no, AuctionORM.pbanc_mng_no,
+            )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["cltr_mng_no", "pbct_cdtn_no"],
                 index_where=AuctionORM.source == AuctionSource.ONBID.value,
@@ -491,11 +537,21 @@ class DBAuctionRepository(AuctionRepository):
     async def list_realty_missing_images(
         self, limit: int
     ) -> list[tuple[int, str, int]]:
+        return await self._list_missing_images(AssetType.REALTY, limit)
+
+    async def list_movable_missing_images(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        return await self._list_missing_images(AssetType.MOVABLE, limit)
+
+    async def _list_missing_images(
+        self, asset_type: AssetType, limit: int
+    ) -> list[tuple[int, str, int]]:
         async with self._session_factory() as session:
             rows = (await session.execute(
                 select(AuctionORM.id, AuctionORM.cltr_mng_no, AuctionORM.pbct_cdtn_no)
                 .where(
-                    AuctionORM.asset_type == AssetType.REALTY.value,
+                    AuctionORM.asset_type == asset_type.value,
                     AuctionORM.cltr_mng_no.is_not(None),
                     AuctionORM.pbct_cdtn_no.is_not(None),
                     func.jsonb_array_length(AuctionORM.image_urls) == 0,
@@ -504,6 +560,34 @@ class DBAuctionRepository(AuctionRepository):
                 .limit(limit)
             )).all()
         return [(r.id, r.cltr_mng_no, r.pbct_cdtn_no) for r in rows]
+
+    async def lookup_active_auction_ids(
+        self, keys: list[tuple[str, int]]
+    ) -> dict[tuple[str, int], int]:
+        if not keys:
+            return {}
+        cltr_set = {k[0] for k in keys}
+        pbct_set = {k[1] for k in keys}
+        async with self._session_factory() as session:
+            rows = (await session.execute(
+                select(
+                    AuctionORM.id, AuctionORM.cltr_mng_no, AuctionORM.pbct_cdtn_no,
+                )
+                .where(
+                    AuctionORM.source == AuctionSource.ONBID.value,
+                    AuctionORM.status.in_(_ACTIVE_STATUSES),
+                    AuctionORM.cltr_mng_no.in_(cltr_set),
+                    AuctionORM.pbct_cdtn_no.in_(pbct_set),
+                )
+            )).all()
+        # DB 후보 중 정확한 (cltr, pbct) 짝만 채택
+        wanted = set(keys)
+        out: dict[tuple[str, int], int] = {}
+        for r in rows:
+            key = (r.cltr_mng_no, r.pbct_cdtn_no)
+            if key in wanted:
+                out[key] = r.id
+        return out
 
     async def update_image_urls(
         self, auction_id: int, image_urls: list[str]
@@ -516,46 +600,169 @@ class DBAuctionRepository(AuctionRepository):
             )
             await session.commit()
 
-    # ---------- round backfill ----------
-    async def list_cltrs_needing_round_backfill(
-        self, limit: int
-    ) -> list[tuple[str, AssetType]]:
-        """가장 빠른 pbct_nsq가 시작 회차가 아닌 active cltr들을 반환.
-
-        휴리스틱: scheduled/ongoing 상태 row의 cltr 안에서 가장 작은 pbct_nsq가
-        "001"보다 크면 그 앞 회차들이 누락됐을 가능성. 단, 회차 코드 체계가
-        매물마다 다를 수 있으니 가벼운 임계만 두고 false-positive는 backfill 시
-        client-side 필터로 흡수.
-        """
+    # ---------- pbanc enrichment (D안 — 누락 회차 보강) ----------
+    async def list_auctions_missing_pbanc_mng_no(
+        self, limit: int,
+    ) -> list[PbancResolveTarget]:
         async with self._session_factory() as session:
-            subq = (
+            rows = (await session.execute(
                 select(
-                    AuctionORM.cltr_mng_no.label("cltr"),
-                    AuctionORM.asset_type.label("atype"),
-                    func.min(AuctionORM.pbct_nsq).label("min_nsq"),
+                    AuctionORM.id,
+                    AuctionORM.onbid_pbanc_no,
+                    AuctionORM.asset_type,
+                    AuctionORM.bid_begin_at,
                 )
                 .where(
                     AuctionORM.source == AuctionSource.ONBID.value,
-                    AuctionORM.cltr_mng_no.is_not(None),
-                    AuctionORM.pbct_nsq.is_not(None),
                     AuctionORM.status.in_(_ACTIVE_STATUSES),
+                    AuctionORM.onbid_pbanc_no.is_not(None),
+                    AuctionORM.pbanc_mng_no.is_(None),
                 )
-                .group_by(AuctionORM.cltr_mng_no, AuctionORM.asset_type)
-                .subquery()
-            )
-            rows = (await session.execute(
-                select(subq.c.cltr, subq.c.atype)
-                .where(subq.c.min_nsq > "001")
-                .order_by(subq.c.min_nsq.desc())
+                .order_by(AuctionORM.id)
                 .limit(limit)
             )).all()
-        out: list[tuple[str, AssetType]] = []
-        for r in rows:
-            try:
-                out.append((r.cltr, AssetType(r.atype)))
-            except ValueError:
-                continue
-        return out
+        return [
+            PbancResolveTarget(
+                auction_id=r.id,
+                onbid_pbanc_no=int(r.onbid_pbanc_no),
+                asset_type=AssetType(r.asset_type) if isinstance(r.asset_type, str) else r.asset_type,
+                bid_begin_at=r.bid_begin_at,
+            )
+            for r in rows
+        ]
+
+    async def update_pbanc_mng_no_batch(
+        self, mapping: list[tuple[int, str]],
+    ) -> int:
+        if not mapping:
+            return 0
+        async with self._session_factory() as session:
+            count = 0
+            for auction_id, pbanc_mng_no in mapping:
+                res = await session.execute(
+                    update(AuctionORM)
+                    .where(AuctionORM.id == auction_id)
+                    .values(pbanc_mng_no=pbanc_mng_no)
+                )
+                count += res.rowcount or 0
+            await session.commit()
+        return count
+
+    async def list_pbanc_groups_for_round_enrich(
+        self, limit: int,
+    ) -> list[PbancEnrichGroup]:
+        # 1) limit개의 distinct pbanc_mng_no 선정 (active onbid)
+        async with self._session_factory() as session:
+            pbanc_rows = (await session.execute(
+                select(AuctionORM.pbanc_mng_no)
+                .where(
+                    AuctionORM.source == AuctionSource.ONBID.value,
+                    AuctionORM.status.in_(_ACTIVE_STATUSES),
+                    AuctionORM.pbanc_mng_no.is_not(None),
+                )
+                .group_by(AuctionORM.pbanc_mng_no)
+                .order_by(AuctionORM.pbanc_mng_no)
+                .limit(limit)
+            )).all()
+            pbanc_set = [r.pbanc_mng_no for r in pbanc_rows]
+            if not pbanc_set:
+                return []
+
+            # 2) 해당 공고들의 모든 row + realty.property_category join
+            detail_rows = (await session.execute(
+                select(
+                    AuctionORM.pbanc_mng_no,
+                    AuctionORM.cltr_mng_no,
+                    AuctionORM.pbct_cdtn_no,
+                    AuctionORM.asset_type,
+                    AuctionORM.region_sido,
+                    AuctionORM.region_sigungu,
+                    AuctionORM.region_emd,
+                    AuctionORM.address,
+                    ST_X(AuctionORM.location).label("lng"),
+                    ST_Y(AuctionORM.location).label("lat"),
+                    AuctionORM.ltno_pnu,
+                    AuctionORM.rdnm_pnu,
+                    AuctionORM.request_org_nm,
+                    AuctionORM.announce_org_nm,
+                    AuctionORM.thumbnail_url,
+                    AuctionRealtyDetailsORM.property_category,
+                )
+                .outerjoin(
+                    AuctionRealtyDetailsORM,
+                    AuctionRealtyDetailsORM.auction_id == AuctionORM.id,
+                )
+                .where(
+                    AuctionORM.source == AuctionSource.ONBID.value,
+                    AuctionORM.pbanc_mng_no.in_(pbanc_set),
+                )
+            )).all()
+
+        # 3) Python에서 그룹핑
+        groups: dict[str, PbancEnrichGroup] = {
+            p: PbancEnrichGroup(pbanc_mng_no=p) for p in pbanc_set
+        }
+        for r in detail_rows:
+            g = groups[r.pbanc_mng_no]
+            cltr = r.cltr_mng_no
+            if cltr and r.pbct_cdtn_no is not None:
+                g.existing_keys.add((cltr, int(r.pbct_cdtn_no)))
+            if cltr and cltr not in g.siblings:
+                asset_type = (
+                    AssetType(r.asset_type) if isinstance(r.asset_type, str)
+                    else r.asset_type
+                )
+                prop_cat = (
+                    PropertyCategory(r.property_category)
+                    if isinstance(r.property_category, str)
+                    else r.property_category
+                )
+                g.siblings[cltr] = AuctionSiblingMeta(
+                    asset_type=asset_type,
+                    region_sido=r.region_sido,
+                    region_sigungu=r.region_sigungu,
+                    region_emd=r.region_emd,
+                    address=r.address,
+                    lat=float(r.lat) if r.lat is not None else None,
+                    lng=float(r.lng) if r.lng is not None else None,
+                    ltno_pnu=r.ltno_pnu,
+                    rdnm_pnu=r.rdnm_pnu,
+                    request_org_nm=r.request_org_nm,
+                    announce_org_nm=r.announce_org_nm,
+                    thumbnail_url=r.thumbnail_url,
+                    property_category=prop_cat,
+                )
+        return list(groups.values())
+
+    # ---------- bid info enrichment (#7) ----------
+    async def list_auctions_missing_bid_info(
+        self, limit: int
+    ) -> list[tuple[int, str, int]]:
+        """active 매물 중 bid_info가 빈 객체(`{}`)인 N건."""
+        async with self._session_factory() as session:
+            rows = (await session.execute(
+                select(AuctionORM.id, AuctionORM.cltr_mng_no, AuctionORM.pbct_cdtn_no)
+                .where(
+                    AuctionORM.status.in_(_ACTIVE_STATUSES),
+                    AuctionORM.cltr_mng_no.is_not(None),
+                    AuctionORM.pbct_cdtn_no.is_not(None),
+                    AuctionORM.bid_info == {},
+                )
+                .order_by(AuctionORM.id)
+                .limit(limit)
+            )).all()
+        return [(r.id, r.cltr_mng_no, r.pbct_cdtn_no) for r in rows]
+
+    async def update_bid_info(
+        self, auction_id: int, bid_info: dict
+    ) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(AuctionORM)
+                .where(AuctionORM.id == auction_id)
+                .values(bid_info=bid_info)
+            )
+            await session.commit()
 
     # ---------- bid result enrichment ----------
     async def list_auctions_pending_results(
@@ -637,6 +844,176 @@ class DBAuctionRepository(AuctionRepository):
                 )
             await session.commit()
 
+    # ---------- vehicle list / stats ----------
+    async def list_vehicles(
+        self, q: VehicleListQuery
+    ) -> tuple[list[VehicleListItem], int]:
+        v = AuctionVehicleDetailsORM
+        a = AuctionORM
+
+        conditions = [a.asset_type == AssetType.VEHICLE.value]
+        if q.vehicle_category is not None:
+            conditions.append(v.vehicle_category == q.vehicle_category.value)
+        if q.maker:
+            conditions.append(v.maker.ilike(f"%{q.maker}%"))
+        if q.fuel:
+            conditions.append(v.fuel.ilike(f"%{q.fuel}%"))
+        if q.transmission:
+            conditions.append(v.transmission.ilike(f"%{q.transmission}%"))
+        if q.year_model_min:
+            conditions.append(v.year_model >= q.year_model_min)
+        if q.year_model_max:
+            conditions.append(v.year_model <= q.year_model_max)
+        if q.mileage_km_min is not None:
+            conditions.append(v.mileage_km >= q.mileage_km_min)
+        if q.mileage_km_max is not None:
+            conditions.append(v.mileage_km <= q.mileage_km_max)
+        if q.displacement_cc_min is not None:
+            conditions.append(v.displacement_cc >= q.displacement_cc_min)
+        if q.displacement_cc_max is not None:
+            conditions.append(v.displacement_cc <= q.displacement_cc_max)
+        if q.status is not None:
+            conditions.append(a.status == q.status.value)
+        if q.region_sido:
+            conditions.append(a.region_sido == q.region_sido)
+
+        list_stmt = (
+            select(
+                a.id, a.source, a.status, a.title,
+                a.region_sido, a.region_sigungu,
+                a.appraisal_price, a.min_bid_price,
+                a.bid_begin_at, a.bid_end_at, a.fee_rate,
+                a.failed_count, a.thumbnail_url,
+                v.vehicle_category, v.maker, v.model_name, v.year_model,
+                v.mileage_km, v.displacement_cc, v.transmission, v.fuel,
+            )
+            .join(v, v.auction_id == a.id)
+            .where(*conditions)
+            .order_by(a.bid_begin_at.desc().nullslast(), a.id.desc())
+            .offset(q.offset)
+            .limit(q.limit)
+        )
+        count_stmt = (
+            select(func.count())
+            .select_from(a)
+            .join(v, v.auction_id == a.id)
+            .where(*conditions)
+        )
+
+        async with self._session_factory() as session:
+            rows = (await session.execute(list_stmt)).all()
+            total = (await session.execute(count_stmt)).scalar_one()
+
+        items = [
+            VehicleListItem(
+                id=r.id,
+                source=r.source,
+                status=r.status,
+                title=r.title,
+                region_sido=r.region_sido,
+                region_sigungu=r.region_sigungu,
+                appraisal_price=r.appraisal_price,
+                min_bid_price=r.min_bid_price,
+                bid_begin_at=r.bid_begin_at,
+                bid_end_at=r.bid_end_at,
+                fee_rate=float(r.fee_rate) if r.fee_rate is not None else None,
+                failed_count=r.failed_count or 0,
+                thumbnail_url=r.thumbnail_url,
+                vehicle_category=r.vehicle_category,
+                maker=r.maker,
+                model_name=r.model_name,
+                year_model=r.year_model,
+                mileage_km=r.mileage_km,
+                displacement_cc=r.displacement_cc,
+                transmission=r.transmission,
+                fuel=r.fuel,
+            )
+            for r in rows
+        ]
+        return items, int(total)
+
+    async def get_vehicle_stats(self) -> VehicleStatsResponse:
+        v = AuctionVehicleDetailsORM
+        a = AuctionORM
+        active = a.status.in_(_ACTIVE_STATUSES)
+        is_vehicle = a.asset_type == AssetType.VEHICLE.value
+
+        async with self._session_factory() as session:
+            total = (await session.execute(
+                select(func.count(a.id))
+                .join(v, v.auction_id == a.id)
+                .where(active, is_vehicle)
+            )).scalar_one()
+
+            cat_rows = (await session.execute(
+                select(v.vehicle_category, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle)
+                .group_by(v.vehicle_category)
+            )).all()
+
+            fuel_rows = (await session.execute(
+                select(v.fuel, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle, v.fuel.is_not(None), v.fuel != "")
+                .group_by(v.fuel)
+                .order_by(func.count().desc())
+            )).all()
+
+            trans_rows = (await session.execute(
+                select(v.transmission, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle, v.transmission.is_not(None), v.transmission != "")
+                .group_by(v.transmission)
+                .order_by(func.count().desc())
+            )).all()
+
+            maker_rows = (await session.execute(
+                select(v.maker, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle, v.maker.is_not(None), v.maker != "")
+                .group_by(v.maker)
+                .order_by(func.count().desc())
+                .limit(20)
+            )).all()
+
+            year_rows = (await session.execute(
+                select(v.year_model, func.count())
+                .join(a, a.id == v.auction_id)
+                .where(active, is_vehicle, v.year_model.is_not(None), v.year_model != "")
+                .group_by(v.year_model)
+                .order_by(v.year_model.desc())
+            )).all()
+
+        by_category = [
+            VehicleFacetCount(
+                key=cat.value,
+                label=VEHICLE_CATEGORY_LABELS_KO.get(cat),
+                count=count,
+            )
+            for cat, count in cat_rows
+        ]
+        return VehicleStatsResponse(
+            total=int(total),
+            by_category=by_category,
+            by_fuel=[
+                VehicleFacetCount(key=val, label=val, count=cnt)
+                for val, cnt in fuel_rows
+            ],
+            by_transmission=[
+                VehicleFacetCount(key=val, label=val, count=cnt)
+                for val, cnt in trans_rows
+            ],
+            by_maker_top=[
+                VehicleMakerCount(maker=val, count=cnt)
+                for val, cnt in maker_rows
+            ],
+            by_year_model=[
+                VehicleYearBucket(year_model=val, count=cnt)
+                for val, cnt in year_rows
+            ],
+        )
+
     @staticmethod
     async def _upsert_details(session: AsyncSession, model, rows: list[dict[str, Any]]) -> None:
         if not rows:
@@ -668,6 +1045,7 @@ class DBAuctionRepository(AuctionRepository):
             "pbct_cdtn_no": item.pbct_cdtn_no,
             "onbid_cltr_no": item.onbid_cltr_no,
             "onbid_pbanc_no": item.onbid_pbanc_no,
+            "pbanc_mng_no": item.pbanc_mng_no,
             "pbct_no": item.pbct_no,
             "pbct_nsq": item.pbct_nsq,
             "pbct_sn": item.pbct_sn,

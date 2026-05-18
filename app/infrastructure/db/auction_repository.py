@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from geoalchemy2.functions import ST_Intersects, ST_MakeEnvelope, ST_X, ST_Y
-from sqlalchemy import String, case, func, select, update
+from sqlalchemy import String, case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -457,6 +457,33 @@ class DBAuctionRepository(AuctionRepository):
             update_cols["pbanc_mng_no"] = func.coalesce(
                 stmt.excluded.pbanc_mng_no, AuctionORM.pbanc_mng_no,
             )
+            # 회차(scdul) 가드: (cltr_mng_no, pbct_cdtn_no) 동일하지만 더 늦은
+            # 회차가 들어와 진행 중인 이른 회차의 일정/금액을 덮어쓰는 것을 방지.
+            # 기존 bid_end_at이 미래이고 들어오는 값이 더 늦은 시점이면 기존 유지.
+            schedule_guard = or_(
+                AuctionORM.bid_end_at.is_(None),
+                AuctionORM.bid_end_at <= func.now(),
+                stmt.excluded.bid_end_at.is_(None),
+                stmt.excluded.bid_end_at <= AuctionORM.bid_end_at,
+            )
+            guarded_cols = (
+                "min_bid_price",
+                "min_bid_price_text",
+                "first_bid_price",
+                "apsl_lowst_ratio",
+                "frst_lowst_ratio",
+                "bid_begin_at",
+                "bid_end_at",
+                "failed_count",
+                "progress_count",
+                "status",
+            )
+            for col_name in guarded_cols:
+                if col_name in update_cols:
+                    update_cols[col_name] = case(
+                        (schedule_guard, stmt.excluded[col_name]),
+                        else_=getattr(AuctionORM, col_name),
+                    )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["cltr_mng_no", "pbct_cdtn_no"],
                 index_where=AuctionORM.source == AuctionSource.ONBID.value,

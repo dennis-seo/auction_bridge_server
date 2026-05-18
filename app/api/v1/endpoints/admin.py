@@ -259,6 +259,66 @@ async def enrich_bid_info(
     }
 
 
+@router.post(
+    "/enrich/pbanc-resolve",
+    summary="D안 Phase A — pbanc_mng_no 매핑 해결 (#15 getPbancList2)",
+)
+async def enrich_pbanc_resolve(
+    limit: int = Query(default=200, ge=1, le=2000),
+    repo: AuctionRepository = Depends(get_auction_repository),
+) -> dict:
+    settings = get_settings()
+    if not settings.ONBID_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ONBID_SERVICE_KEY is not configured.",
+        )
+    client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
+    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
+    service = OnbidIngestService(
+        client=client, geocoder=geocoder, repo=repo,
+        geocode_concurrency=settings.GEOCODE_CONCURRENCY,
+    )
+    stats = await service.enrich_pbanc_mng_no(limit=limit)
+    return {
+        "limit": limit,
+        "targeted": stats.targeted,
+        "resolved": stats.enriched,
+        "failed": stats.failed,
+        "api_calls": stats.api_calls,
+    }
+
+
+@router.post(
+    "/enrich/missing-rounds",
+    summary="D안 Phase B — 공고 단위 누락 회차 보강 (#18 getPbancCltrInf2)",
+)
+async def enrich_missing_rounds(
+    limit: int = Query(default=100, ge=1, le=1000),
+    repo: AuctionRepository = Depends(get_auction_repository),
+) -> dict:
+    settings = get_settings()
+    if not settings.ONBID_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ONBID_SERVICE_KEY is not configured.",
+        )
+    client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
+    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
+    service = OnbidIngestService(
+        client=client, geocoder=geocoder, repo=repo,
+        geocode_concurrency=settings.GEOCODE_CONCURRENCY,
+    )
+    stats = await service.enrich_missing_rounds_via_pbanc(limit=limit)
+    return {
+        "limit": limit,
+        "targeted": stats.targeted,
+        "enriched": stats.enriched,
+        "failed": stats.failed,
+        "api_calls": stats.api_calls,
+    }
+
+
 # =====================================================================
 # 좌표 백필 — 동(洞) centroid에 뭉친 row를 parcel 단위로 재지오코딩
 # =====================================================================

@@ -829,6 +829,43 @@ class DBAuctionRepository(AuctionRepository):
         )
         return (sibling, existing_pbct, pbanc_mng_no)
 
+    async def list_cltrs_missing_default_round(
+        self, limit: int, ratio: float = 0.95,
+    ) -> list[str]:
+        from sqlalchemy import exists, not_
+
+        async with self._session_factory() as session:
+            a2 = AuctionORM.__table__.alias("a2")
+            full_price_exists = (
+                select(1)
+                .select_from(a2)
+                .where(
+                    a2.c.source == AuctionSource.ONBID.value,
+                    a2.c.cltr_mng_no == AuctionORM.cltr_mng_no,
+                    a2.c.min_bid_price.is_not(None),
+                    a2.c.appraisal_price.is_not(None),
+                    a2.c.min_bid_price >= a2.c.appraisal_price * ratio,
+                )
+                .exists()
+            )
+            rows = (await session.execute(
+                select(AuctionORM.cltr_mng_no)
+                .where(
+                    AuctionORM.source == AuctionSource.ONBID.value,
+                    AuctionORM.status.in_(_ACTIVE_STATUSES),
+                    AuctionORM.cltr_mng_no.is_not(None),
+                    AuctionORM.appraisal_price.is_not(None),
+                    AuctionORM.appraisal_price > 0,
+                    AuctionORM.min_bid_price.is_not(None),
+                    AuctionORM.min_bid_price < AuctionORM.appraisal_price * ratio,
+                    not_(full_price_exists),
+                )
+                .group_by(AuctionORM.cltr_mng_no)
+                .order_by(AuctionORM.cltr_mng_no)
+                .limit(limit)
+            )).all()
+        return [r.cltr_mng_no for r in rows if r.cltr_mng_no]
+
     # ---------- bid info enrichment (#7) ----------
     async def list_auctions_missing_bid_info(
         self, limit: int

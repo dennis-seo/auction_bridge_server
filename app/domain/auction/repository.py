@@ -205,3 +205,15 @@ class AuctionRepository(ABC):
         cltr가 DB에 없으면 (None, set(), None).
         """
         ...
+
+    @abstractmethod
+    async def list_cltrs_missing_default_round(
+        self, limit: int, ratio: float = 0.95,
+    ) -> list[str]:
+        """1회차/감정가 회차가 누락된 cltr_mng_no 후보.
+
+        조건: active 매물 중 min_bid_price < appraisal_price * ratio 인 row가
+        존재하면서, 같은 cltr_mng_no에 min_bid_price >= appraisal_price * ratio
+        (= 1회차로 의심) row가 하나도 없는 cltr.
+        """
+        ...

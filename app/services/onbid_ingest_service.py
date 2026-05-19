@@ -1183,6 +1183,45 @@ class OnbidIngestService:
         )
         return stats
 
+    async def enrich_default_rounds_auto(
+        self, *, limit: int = 50, dry_run: bool = False, ratio: float = 0.95,
+    ) -> dict:
+        """1회차 row 누락 의심 cltr를 자동 검출해 enrich_default_round_for_cltr 일괄 실행.
+
+        dry_run=True면 후보 cltr 리스트만 반환하고 OnBid 호출/DB 변경 없음.
+        """
+        cltrs = await self._repo.list_cltrs_missing_default_round(
+            limit=limit, ratio=ratio,
+        )
+        result: dict = {
+            "targeted": len(cltrs),
+            "dry_run": dry_run,
+            "ratio": ratio,
+            "cltr_mng_nos": cltrs[:50],  # 앞 50개 샘플만 응답에
+        }
+        if dry_run or not cltrs:
+            result["enriched"] = 0
+            result["failed"] = 0
+            result["api_calls"] = 0
+            return result
+
+        total_enriched = 0
+        total_failed = 0
+        total_calls = 0
+        for cltr in cltrs:
+            try:
+                s = await self.enrich_default_round_for_cltr(cltr)
+            except OnbidQuotaExceeded as e:
+                logger.warning("auto default-round quota exceeded: %s", e)
+                break
+            total_enriched += s.enriched
+            total_failed += s.failed
+            total_calls += s.api_calls
+        result["enriched"] = total_enriched
+        result["failed"] = total_failed
+        result["api_calls"] = total_calls
+        return result
+
     async def enrich_bid_results_by_list(
         self,
         *,

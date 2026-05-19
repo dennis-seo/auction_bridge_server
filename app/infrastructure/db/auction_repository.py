@@ -861,7 +861,7 @@ class DBAuctionRepository(AuctionRepository):
                     not_(full_price_exists),
                 )
                 .group_by(AuctionORM.cltr_mng_no)
-                .order_by(AuctionORM.cltr_mng_no)
+                .order_by(AuctionORM.cltr_mng_no.desc())
                 .limit(limit)
             )).all()
         return [r.cltr_mng_no for r in rows if r.cltr_mng_no]

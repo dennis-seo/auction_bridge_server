@@ -194,3 +194,14 @@ class AuctionRepository(ABC):
         sibling 메타(cltr_mng_no → AuctionSiblingMeta)를 포함.
         """
         ...
+
+    @abstractmethod
+    async def get_sibling_for_cltr(
+        self, cltr_mng_no: str,
+    ) -> tuple[AuctionSiblingMeta | None, set[int], str | None]:
+        """단일 cltr_mng_no의 sibling 메타 + 이미 보유한 pbct_cdtn_no 집합 + pbanc_mng_no.
+
+        pbanc_mng_no는 회차들이 공유하므로 임의의 1개 row 값을 그대로 반환.
+        cltr가 DB에 없으면 (None, set(), None).
+        """
+        ...

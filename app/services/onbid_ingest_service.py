@@ -1117,6 +1117,72 @@ class OnbidIngestService:
             )
         return stats
 
+    async def enrich_default_round_for_cltr(
+        self, cltr_mng_no: str,
+    ) -> EnrichStats:
+        """단일 cltr_mng_no의 "현재 노출 회차"를 OnBid에서 받아 DB에 upsert.
+
+        Phase A/B가 미래/과거 매물의 pbanc_mng_no를 해결하지 못해 누락된 회차에
+        대해 핀포인트로 동작. `getRlstDtlInf2`를 cltrMngNo만 필터로 호출하면
+        OnBid 공식 사이트가 보여주는 그 회차(보통 1회차)를 1건 응답으로 받는다.
+        """
+        stats = EnrichStats(targeted=1)
+        sibling, existing_pbct, pbanc_mng_no = await self._repo.get_sibling_for_cltr(
+            cltr_mng_no,
+        )
+        if sibling is None:
+            logger.info(
+                "default-round enrich skipped — cltr=%s DB에 없음", cltr_mng_no,
+            )
+            stats.failed = 1
+            return stats
+
+        stats.api_calls = 1
+        try:
+            raw = await self._client.get_realty_detail(cltr_mng_no=cltr_mng_no)
+        except OnbidQuotaExceeded as e:
+            logger.warning("default-round enrich quota exceeded: %s", e)
+            stats.failed = 1
+            return stats
+        except OnbidAPIError as e:
+            logger.info("default-round enrich error cltr=%s: %s", cltr_mng_no, e)
+            stats.failed = 1
+            return stats
+
+        if not raw or not raw.get("cltrMngNo"):
+            logger.info(
+                "default-round enrich empty response cltr=%s", cltr_mng_no,
+            )
+            stats.failed = 1
+            return stats
+
+        pbct = parse_int(raw.get("pbctCdtnNo"))
+        if pbct is None:
+            stats.failed = 1
+            return stats
+        if pbct in existing_pbct:
+            logger.info(
+                "default-round enrich noop cltr=%s pbct=%d already exists",
+                cltr_mng_no, pbct,
+            )
+            return stats
+
+        item = _normalize_pbanc_cltr_item(raw, sibling, pbanc_mng_no or "")
+        if item is None:
+            stats.failed = 1
+            return stats
+        # pbanc_mng_no 미해결인 경우는 빈 문자열로 들어가지 않게 None 처리.
+        if not pbanc_mng_no:
+            item.pbanc_mng_no = None
+
+        ins, upd = await self._repo.upsert_many([item])
+        stats.enriched = ins + upd
+        logger.info(
+            "default-round enrich done cltr=%s pbct=%d ins=%d upd=%d",
+            cltr_mng_no, pbct, ins, upd,
+        )
+        return stats
+
     async def enrich_bid_results_by_list(
         self,
         *,

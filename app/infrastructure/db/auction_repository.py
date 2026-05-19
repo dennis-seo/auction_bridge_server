@@ -761,6 +761,74 @@ class DBAuctionRepository(AuctionRepository):
                 )
         return list(groups.values())
 
+    async def get_sibling_for_cltr(
+        self, cltr_mng_no: str,
+    ) -> tuple[AuctionSiblingMeta | None, set[int], str | None]:
+        async with self._session_factory() as session:
+            rows = (await session.execute(
+                select(
+                    AuctionORM.pbct_cdtn_no,
+                    AuctionORM.pbanc_mng_no,
+                    AuctionORM.asset_type,
+                    AuctionORM.region_sido,
+                    AuctionORM.region_sigungu,
+                    AuctionORM.region_emd,
+                    AuctionORM.address,
+                    ST_X(AuctionORM.location).label("lng"),
+                    ST_Y(AuctionORM.location).label("lat"),
+                    AuctionORM.ltno_pnu,
+                    AuctionORM.rdnm_pnu,
+                    AuctionORM.request_org_nm,
+                    AuctionORM.announce_org_nm,
+                    AuctionORM.thumbnail_url,
+                    AuctionRealtyDetailsORM.property_category,
+                )
+                .outerjoin(
+                    AuctionRealtyDetailsORM,
+                    AuctionRealtyDetailsORM.auction_id == AuctionORM.id,
+                )
+                .where(
+                    AuctionORM.source == AuctionSource.ONBID.value,
+                    AuctionORM.cltr_mng_no == cltr_mng_no,
+                )
+            )).all()
+
+        if not rows:
+            return (None, set(), None)
+
+        existing_pbct: set[int] = set()
+        pbanc_mng_no: str | None = None
+        for r in rows:
+            if r.pbct_cdtn_no is not None:
+                existing_pbct.add(int(r.pbct_cdtn_no))
+            if pbanc_mng_no is None and r.pbanc_mng_no:
+                pbanc_mng_no = r.pbanc_mng_no
+
+        r0 = rows[0]
+        asset_type = (
+            AssetType(r0.asset_type) if isinstance(r0.asset_type, str) else r0.asset_type
+        )
+        prop_cat = (
+            PropertyCategory(r0.property_category)
+            if isinstance(r0.property_category, str) else r0.property_category
+        )
+        sibling = AuctionSiblingMeta(
+            asset_type=asset_type,
+            region_sido=r0.region_sido,
+            region_sigungu=r0.region_sigungu,
+            region_emd=r0.region_emd,
+            address=r0.address,
+            lat=float(r0.lat) if r0.lat is not None else None,
+            lng=float(r0.lng) if r0.lng is not None else None,
+            ltno_pnu=r0.ltno_pnu,
+            rdnm_pnu=r0.rdnm_pnu,
+            request_org_nm=r0.request_org_nm,
+            announce_org_nm=r0.announce_org_nm,
+            thumbnail_url=r0.thumbnail_url,
+            property_category=prop_cat,
+        )
+        return (sibling, existing_pbct, pbanc_mng_no)
+
     # ---------- bid info enrichment (#7) ----------
     async def list_auctions_missing_bid_info(
         self, limit: int

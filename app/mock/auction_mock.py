@@ -592,6 +592,9 @@ class MockAuctionRepository(AuctionRepository):
     ) -> list[PbancEnrichGroup]:
         return []
 
+    async def get_sibling_for_cltr(self, cltr_mng_no: str):
+        return (None, set(), None)
+
     async def list_vehicles(
         self, q: VehicleListQuery
     ) -> tuple[list[VehicleListItem], int]:

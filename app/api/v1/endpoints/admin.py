@@ -290,6 +290,36 @@ async def enrich_pbanc_resolve(
 
 
 @router.post(
+    "/enrich/cltr-default-round",
+    summary="단일 cltr_mng_no 핀포인트 — OnBid 노출 회차 1건 INSERT (Phase A/B 미해결 매물용)",
+)
+async def enrich_cltr_default_round(
+    cltr_mng_no: str = Query(..., min_length=3, max_length=50),
+    repo: AuctionRepository = Depends(get_auction_repository),
+) -> dict:
+    settings = get_settings()
+    if not settings.ONBID_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ONBID_SERVICE_KEY is not configured.",
+        )
+    client = OnbidClient(service_key=settings.ONBID_SERVICE_KEY)
+    geocoder = KakaoGeocoder(rest_api_key=settings.KAKAO_REST_API_KEY)
+    service = OnbidIngestService(
+        client=client, geocoder=geocoder, repo=repo,
+        geocode_concurrency=settings.GEOCODE_CONCURRENCY,
+    )
+    stats = await service.enrich_default_round_for_cltr(cltr_mng_no)
+    return {
+        "cltr_mng_no": cltr_mng_no,
+        "targeted": stats.targeted,
+        "enriched": stats.enriched,
+        "failed": stats.failed,
+        "api_calls": stats.api_calls,
+    }
+
+
+@router.post(
     "/enrich/missing-rounds",
     summary="D안 Phase B — 공고 단위 누락 회차 보강 (#18 getPbancCltrInf2)",
 )

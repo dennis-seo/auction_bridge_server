@@ -165,16 +165,22 @@ class OnbidClient:
 
     # ---------- 상세 ----------
     async def get_realty_detail(
-        self, *, cltr_mng_no: str, pbct_cdtn_no: int | str
+        self, *, cltr_mng_no: str, pbct_cdtn_no: int | str | None = None
     ) -> dict[str, Any]:
-        """부동산 물건상세."""
+        """부동산 물건상세.
+
+        pbct_cdtn_no=None이면 cltrMngNo만으로 호출 → OnBid가 그 매물의 "현재 노출"
+        회차(보통 가장 임박한 1회차) 1건을 반환. 모든 회차 enumerate는 어렵지만,
+        OnBid 공식 사이트가 보여주는 그 회차를 그대로 받아올 수 있다.
+        """
         url = f"{self._base_url}/OnbidRlstDtlSrvc2/getRlstDtlInf2"
-        params = {
+        params: dict[str, Any] = {
             "serviceKey": self._service_key,
             "resultType": "json",
             "cltrMngNo": cltr_mng_no,
-            "pbctCdtnNo": str(pbct_cdtn_no),
         }
+        if pbct_cdtn_no is not None:
+            params["pbctCdtnNo"] = str(pbct_cdtn_no)
         return await self._request_single(url, params)
 
     async def get_movable_detail(

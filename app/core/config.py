@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRES_MIN: int = 60
     JWT_REFRESH_TOKEN_EXPIRES_DAYS: int = 14
 
+    # Admin 엔드포인트 보호용 정적 키 (X-Admin-Key 헤더로 검증).
+    # non-local 환경에서 비어 있으면 admin 라우트는 503으로 fail-closed.
+    ADMIN_API_KEY: str = ""
+
+    # 요청 레이트 리밋 (per-IP, 인스턴스 로컬). 형식: "<count>/<period>".
+    RATE_LIMIT_DEFAULT: str = "120/minute"
+    RATE_LIMIT_ENABLED: bool = True
+
     # Kakao OAuth (Local API와 동일 키 공유)
     KAKAO_REST_API_KEY: str = ""
     KAKAO_REDIRECT_URI: str = ""

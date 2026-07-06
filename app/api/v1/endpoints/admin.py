@@ -1,10 +1,16 @@
-"""개발/운영용 admin 엔드포인트. 1차에는 인증 없이 local 한정."""
+"""개발/운영용 admin 엔드포인트.
+
+모든 라우트는 상태를 변경하거나 외부 API quota를 소모하므로 라우터 레벨에서
+`require_admin`으로 게이트한다. `X-Admin-Key` 헤더가 `ADMIN_API_KEY`와 일치해야 하며,
+non-local 환경에서 키가 설정돼 있지 않으면 fail-closed(503)로 차단된다.
+"""
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, select, update
 
 from app.api.deps import get_auction_repository
@@ -23,7 +29,34 @@ from app.services.onbid_ingest_service import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+
+def require_admin(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+) -> None:
+    """admin 라우트 인증. 라우터 레벨 dependency로 모든 하위 라우트에 강제된다."""
+    settings = get_settings()
+    expected = settings.ADMIN_API_KEY
+    if not expected:
+        # 키 미설정: local에서는 개발 편의상 허용, 그 외 환경은 오설정으로 간주해 차단.
+        if settings.APP_ENV == "local":
+            return
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="admin auth not configured",
+        )
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid admin key",
+        )
+
+
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin)],
+    include_in_schema=False,
+)
 
 
 _ASSET_ALIASES: dict[str, OnbidAssetService] = {

@@ -6,6 +6,7 @@ Cloud Scheduler는 OIDC ID 토큰을 Authorization: Bearer 헤더로 보낸다.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 
 from fastapi import APIRouter, Header, HTTPException, status
@@ -18,6 +19,9 @@ from app.services.scheduler import run_daily_onbid_ingest
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/internal/cron", tags=["cron"], include_in_schema=False)
+
+# 구글이 발급하는 OIDC ID 토큰의 유효 issuer.
+_GOOGLE_ISSUERS = {"https://accounts.google.com", "accounts.google.com"}
 
 
 def _verify_oidc(authorization: str | None) -> None:
@@ -42,7 +46,14 @@ def _verify_oidc(authorization: str | None) -> None:
         logger.warning("OIDC verification failed: %s", e)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
 
-    if info.get("email") != expected_email or not info.get("email_verified"):
+    # issuer를 명시적으로 검증 (라이브러리 기본 검증에 더해 방어 심층화).
+    if info.get("iss") not in _GOOGLE_ISSUERS:
+        logger.warning("OIDC issuer rejected: %s", info.get("iss"))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid issuer")
+
+    token_email = info.get("email") or ""
+    email_ok = hmac.compare_digest(token_email, expected_email)
+    if not email_ok or not info.get("email_verified"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="email mismatch")
 
 

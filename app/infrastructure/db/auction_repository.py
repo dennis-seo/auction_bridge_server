@@ -305,10 +305,16 @@ class DBAuctionRepository(AuctionRepository):
 
         rights = None
         if row.summary is not None or row.risk_level is not None or row.rights_data:
+            # rights_data는 임의 JSONB라 공개 응답에 그대로 싣지 않는다. 내부/분석가 메모는
+            # '_' 접두 키 컨벤션으로 저장하고, 응답에서는 이를 제거해 유출을 막는다.
+            public_rights_data = {
+                k: v for k, v in (row.rights_data or {}).items()
+                if not k.startswith("_")
+            }
             rights = RightsAnalysisSummary(
                 summary=row.summary,
                 risk_level=row.risk_level,
-                rights_data=row.rights_data or {},
+                rights_data=public_rights_data,
             )
 
         details = None

@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +14,8 @@ class Settings(BaseSettings):
 
     # App
     APP_ENV: str = "local"
-    APP_DEBUG: bool = True
+    # 기본 False — prod에서 실수로 SQL echo(바인딩 파라미터=PII 포함)/uvicorn reload가 켜지지 않게.
+    APP_DEBUG: bool = False
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
     USE_MOCK: bool = True
@@ -79,6 +80,22 @@ class Settings(BaseSettings):
 
     # 지오코딩 동시성
     GEOCODE_CONCURRENCY: int = 10
+
+    @field_validator("CORS_ORIGIN_REGEX")
+    @classmethod
+    def _validate_cors_regex_anchored(cls, v: str) -> str:
+        """allow_credentials=True와 함께 쓰는 origin 정규식은 반드시 앵커(^…$)돼야 안전.
+
+        앵커가 없으면 `.*vercel\\.app` 같은 패턴이 `evil-vercel.app.attacker.com` 등을
+        허용해 자격증명 포함 요청을 임의 origin에 열어줄 수 있다.
+        """
+        v = v.strip()
+        if v and not (v.startswith("^") and v.endswith("$")):
+            raise ValueError(
+                "CORS_ORIGIN_REGEX must be anchored with '^' and '$' "
+                f"(got: {v!r})"
+            )
+        return v
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -4,11 +4,29 @@ DB(`auctions` + 3 detail) 와 1:1로 매핑되는 도메인/응답/적재 모델
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PlainSerializer, model_validator
+
+
+KST = timezone(timedelta(hours=9))
+
+
+def _to_kst(dt: datetime) -> datetime:
+    """naive면 UTC로 간주한 뒤 KST로 변환."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(KST)
+
+
+# 응답 모델 전용 시각 타입. DB(TIMESTAMPTZ)는 asyncpg가 UTC로 돌려주는데, 클라는
+# ISO 문자열 앞부분을 잘라 "YYYY-MM-DD HH:mm"으로 표시하므로 +09:00으로 내보낸다.
+# 적재/JSONB 모델(AuctionUpsertItem, BidInfo 등)에는 쓰지 않는다.
+KstDatetime = Annotated[
+    datetime, PlainSerializer(_to_kst, return_type=datetime, when_used="json"),
+]
 
 
 # =====================================================================
@@ -129,7 +147,7 @@ class AuctionListItem(BaseModel):
     lng: float | None = None
     appraisal_price: int | None = None
     min_bid_price: int | None = None
-    bid_end_at: datetime | None = None
+    bid_end_at: KstDatetime | None = None
     fee_rate: float | None = None
     failed_count: int = 0
     thumbnail_url: str | None = None
@@ -226,7 +244,7 @@ class AuctionRoundResult(BaseModel):
     winning_bid_amount: int | None = None
     apsl_scfb_ratio: float | None = None
     valid_bidder_count: int | None = None
-    opbd_at: datetime | None = None
+    opbd_at: KstDatetime | None = None
 
 
 class AuctionRoundItem(BaseModel):
@@ -237,8 +255,8 @@ class AuctionRoundItem(BaseModel):
     status: AuctionStatus
     min_bid_price: int | None = None
     min_bid_price_text: str | None = None
-    bid_begin_at: datetime | None = None
-    bid_end_at: datetime | None = None
+    bid_begin_at: KstDatetime | None = None
+    bid_end_at: KstDatetime | None = None
     is_current: bool = False
     result: AuctionRoundResult | None = None
 
@@ -277,8 +295,8 @@ class AuctionDetail(BaseModel):
     fee_rate: float | None = None
 
     # 일정
-    bid_begin_at: datetime | None = None
-    bid_end_at: datetime | None = None
+    bid_begin_at: KstDatetime | None = None
+    bid_end_at: KstDatetime | None = None
     failed_count: int = 0
     progress_count: int = 0
     pvct_trgt_yn: bool | None = None
@@ -498,8 +516,8 @@ class VehicleListItem(BaseModel):
     region_sigungu: str | None = None
     appraisal_price: int | None = None
     min_bid_price: int | None = None
-    bid_begin_at: datetime | None = None
-    bid_end_at: datetime | None = None
+    bid_begin_at: KstDatetime | None = None
+    bid_end_at: KstDatetime | None = None
     fee_rate: float | None = None
     failed_count: int = 0
     thumbnail_url: str | None = None
@@ -593,8 +611,8 @@ class RealtyListItem(BaseModel):
     min_bid_price: int | None = None
     min_bid_price_text: str | None = None
     apsl_lowst_ratio: float | None = None
-    bid_begin_at: datetime | None = None
-    bid_end_at: datetime | None = None
+    bid_begin_at: KstDatetime | None = None
+    bid_end_at: KstDatetime | None = None
     failed_count: int = 0
     thumbnail_url: str | None = None
 
@@ -660,7 +678,7 @@ class BidResultListItem(BaseModel):
     apsl_scfb_ratio: float | None = None
     lowst_scfb_ratio: float | None = None
     valid_bidder_count: int | None = None
-    opbd_at: datetime | None = None
+    opbd_at: KstDatetime | None = None
     failed_count: int = 0
 
 

@@ -4,7 +4,7 @@ DB(`auctions` + 3 detail) 와 1:1로 매핑되는 도메인/응답/적재 모델
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Annotated, Any, Literal, Union
 
@@ -120,6 +120,8 @@ class AuctionListItem(BaseModel):
     asset_type: AssetType
     status: AuctionStatus
     title: str | None = None
+    cltr_mng_no: str | None = None
+    prpt_div_nm: str | None = None
     address: str | None = None
     region_sido: str | None = None
     region_sigungu: str | None = None
@@ -219,6 +221,28 @@ class RightsAnalysisSummary(BaseModel):
     rights_data: dict[str, Any] = Field(default_factory=dict)
 
 
+class AuctionRoundResult(BaseModel):
+    """회차의 확정 결과 (auction_bid_results) — 있으면 붙는다."""
+    winning_bid_amount: int | None = None
+    apsl_scfb_ratio: float | None = None
+    valid_bidder_count: int | None = None
+    opbd_at: datetime | None = None
+
+
+class AuctionRoundItem(BaseModel):
+    """같은 물건(cltr_mng_no)의 회차 1건 — 상세 화면 '회차 이력' 행."""
+    auction_id: int
+    pbct_cdtn_no: int | None = None
+    round_label: str | None = None  # pbct_nsq(-pbct_sn) 결합 표기
+    status: AuctionStatus
+    min_bid_price: int | None = None
+    min_bid_price_text: str | None = None
+    bid_begin_at: datetime | None = None
+    bid_end_at: datetime | None = None
+    is_current: bool = False
+    result: AuctionRoundResult | None = None
+
+
 class AuctionDetail(BaseModel):
     id: int
     source: AuctionSource
@@ -281,6 +305,9 @@ class AuctionDetail(BaseModel):
 
     # 권리분석
     rights_analysis: RightsAnalysisSummary | None = None
+
+    # 회차 이력 — 같은 cltr_mng_no의 전체 회차 (bid_begin_at 오름차순)
+    rounds: list[AuctionRoundItem] = Field(default_factory=list)
 
 
 # =====================================================================
@@ -465,6 +492,8 @@ class VehicleListItem(BaseModel):
     source: AuctionSource
     status: AuctionStatus
     title: str | None = None
+    cltr_mng_no: str | None = None
+    prpt_div_nm: str | None = None
     region_sido: str | None = None
     region_sigungu: str | None = None
     appraisal_price: int | None = None
@@ -532,6 +561,127 @@ class VehicleStatsResponse(BaseModel):
     by_transmission: list[VehicleFacetCount]
     by_maker_top: list[VehicleMakerCount]
     by_year_model: list[VehicleYearBucket]
+
+
+# =====================================================================
+# Realty list (asset_type=realty 전용 — 목록 검색)
+# =====================================================================
+class RealtySort(str, Enum):
+    NEWEST = "newest"              # created_at DESC (신건순)
+    DEADLINE = "deadline"          # bid_end_at ASC NULLS LAST (마감임박순)
+    PRICE_ASC = "price_asc"        # min_bid_price ASC NULLS LAST
+    PRICE_DESC = "price_desc"      # min_bid_price DESC NULLS LAST
+    RATIO_ASC = "ratio_asc"        # apsl_lowst_ratio ASC (할인율 큰 순)
+    FAILED_COUNT = "failed_count"  # failed_count DESC (유찰 많은 순)
+
+
+class RealtyListItem(BaseModel):
+    """부동산 목록 카드용 페이로드 — 면적/카테고리 포함."""
+    id: int
+    source: AuctionSource
+    status: AuctionStatus
+    title: str | None = None
+    cltr_mng_no: str | None = None
+    prpt_div_nm: str | None = None
+    dsps_mthod_nm: str | None = None
+    address: str | None = None
+    region_sido: str | None = None
+    region_sigungu: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    appraisal_price: int | None = None
+    min_bid_price: int | None = None
+    min_bid_price_text: str | None = None
+    apsl_lowst_ratio: float | None = None
+    bid_begin_at: datetime | None = None
+    bid_end_at: datetime | None = None
+    failed_count: int = 0
+    thumbnail_url: str | None = None
+
+    property_category: PropertyCategory = PropertyCategory.ETC
+    land_sqms: float | None = None
+    bld_sqms: float | None = None
+
+
+class RealtyListResponse(BaseModel):
+    items: list[RealtyListItem]
+    total: int = Field(description="필터 조건에 매칭되는 총 건수 (대표 회차 기준)")
+    offset: int
+    limit: int
+
+
+class RealtyListQuery(BaseModel):
+    property_category: list[PropertyCategory] | None = None
+    region_sido: str | None = Field(default=None, max_length=20)
+    region_sigungu: str | None = Field(default=None, max_length=30)
+    appraisal_price_min: int | None = Field(default=None, ge=0)
+    appraisal_price_max: int | None = Field(default=None, ge=0)
+    min_bid_price_min: int | None = Field(default=None, ge=0)
+    min_bid_price_max: int | None = Field(default=None, ge=0)
+    failed_count_min: int | None = Field(default=None, ge=0)
+    failed_count_max: int | None = Field(default=None, ge=0)
+    land_sqms_min: float | None = Field(default=None, ge=0)
+    land_sqms_max: float | None = Field(default=None, ge=0)
+    bld_sqms_min: float | None = Field(default=None, ge=0)
+    bld_sqms_max: float | None = Field(default=None, ge=0)
+    status: AuctionStatus | None = None
+    sort: RealtySort = RealtySort.NEWEST
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+# =====================================================================
+# Bid result list (매각결과 목록 — auction_bid_results 기반)
+# =====================================================================
+class BidResultSort(str, Enum):
+    OPBD_AT_DESC = "opbd_at_desc"  # 개찰일 최신순 (기본)
+    RATIO_DESC = "ratio_desc"      # 낙찰가율(감정가 대비) 높은 순
+    RATIO_ASC = "ratio_asc"        # 낙찰가율 낮은 순
+
+
+BidResultKind = Literal["sold", "failed", "cancelled"]
+
+
+class BidResultListItem(BaseModel):
+    auction_id: int
+    cltr_mng_no: str | None = None
+    asset_type: AssetType
+    property_category: PropertyCategory | None = None
+    title: str | None = None
+    address: str | None = None
+    region_sido: str | None = None
+    region_sigungu: str | None = None
+    prpt_div_nm: str | None = None
+    thumbnail_url: str | None = None
+    appraisal_price: int | None = None
+    min_bid_price: int | None = None
+    result: AuctionStatus
+    winning_bid_amount: int | None = None
+    apsl_scfb_ratio: float | None = None
+    lowst_scfb_ratio: float | None = None
+    valid_bidder_count: int | None = None
+    opbd_at: datetime | None = None
+    failed_count: int = 0
+
+
+class BidResultListResponse(BaseModel):
+    items: list[BidResultListItem]
+    total: int = Field(description="필터 조건에 매칭되는 총 건수")
+    offset: int
+    limit: int
+
+
+class BidResultListQuery(BaseModel):
+    asset_type: AssetType | None = None
+    property_category: list[PropertyCategory] | None = None
+    region_sido: str | None = Field(default=None, max_length=20)
+    region_sigungu: str | None = Field(default=None, max_length=30)
+    result: BidResultKind | None = None
+    opbd_from: date | None = None
+    opbd_to: date | None = None
+    sort: BidResultSort = BidResultSort.OPBD_AT_DESC
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
 
 
 # =====================================================================

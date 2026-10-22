@@ -221,6 +221,11 @@ CREATE INDEX idx_auctions_region         ON auctions (region_sido, region_sigung
 CREATE INDEX idx_auctions_modified_at    ON auctions (modified_at DESC);
 CREATE INDEX idx_auctions_address_trgm
     ON auctions USING GIN (address extensions.gin_trgm_ops);
+-- 부동산 목록 검색용 (alembic 0004_realty_list_indexes)
+CREATE INDEX idx_auctions_min_bid_price  ON auctions (min_bid_price);
+CREATE INDEX idx_auctions_failed_count   ON auctions (failed_count);
+CREATE INDEX idx_auctions_created_at     ON auctions (created_at DESC);
+CREATE INDEX idx_auctions_asset_status_end ON auctions (asset_type, status, bid_end_at);
 
 
 -- ---------------------------------------------------------------------

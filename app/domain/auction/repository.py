@@ -12,7 +12,11 @@ from app.domain.auction.schemas import (
     AuctionStatsResponse,
     AuctionStatus,
     AuctionUpsertItem,
+    BidResultListItem,
+    BidResultListQuery,
     PropertyCategory,
+    RealtyListItem,
+    RealtyListQuery,
     VehicleCategory,
     VehicleListItem,
     VehicleListQuery,
@@ -163,6 +167,24 @@ class AuctionRepository(ABC):
         self, q: VehicleListQuery
     ) -> tuple[list[VehicleListItem], int]:
         """필터된 차량 리스트 + 총 매칭 건수 — (items, total)."""
+        ...
+
+    @abstractmethod
+    async def list_bid_results(
+        self, q: BidResultListQuery
+    ) -> tuple[list[BidResultListItem], int]:
+        """확정된 매각결과(낙찰/유찰/취소) 목록 + 총 건수 — (items, total)."""
+        ...
+
+    @abstractmethod
+    async def list_realty(
+        self, q: RealtyListQuery
+    ) -> tuple[list[RealtyListItem], int]:
+        """필터된 부동산 리스트 + 총 매칭 건수 — (items, total).
+
+        같은 물건(cltr_mng_no)의 여러 회차 중 대표 회차 1건만 노출
+        (get_in_bbox와 동일한 dedup 규칙).
+        """
         ...
 
     @abstractmethod

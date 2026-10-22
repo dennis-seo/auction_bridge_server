@@ -4,6 +4,10 @@ from app.domain.auction.schemas import (
     AuctionListResponse,
     AuctionStatsResponse,
     BBoxQuery,
+    BidResultListQuery,
+    BidResultListResponse,
+    RealtyListQuery,
+    RealtyListResponse,
     VehicleListQuery,
     VehicleListResponse,
     VehicleStatsResponse,
@@ -33,6 +37,20 @@ class AuctionService:
 
     async def get_detail(self, auction_id: int) -> AuctionDetail | None:
         return await self._repo.get_by_id(auction_id)
+
+    async def list_bid_results(
+        self, q: BidResultListQuery
+    ) -> BidResultListResponse:
+        items, total = await self._repo.list_bid_results(q)
+        return BidResultListResponse(
+            items=items, total=total, offset=q.offset, limit=q.limit,
+        )
+
+    async def list_realty(self, q: RealtyListQuery) -> RealtyListResponse:
+        items, total = await self._repo.list_realty(q)
+        return RealtyListResponse(
+            items=items, total=total, offset=q.offset, limit=q.limit,
+        )
 
     async def list_vehicles(self, q: VehicleListQuery) -> VehicleListResponse:
         items, total = await self._repo.list_vehicles(q)

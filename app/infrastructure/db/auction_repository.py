@@ -24,14 +24,22 @@ from app.domain.auction.schemas import (
     AuctionCodeNames,
     AuctionDetail,
     AuctionListItem,
+    AuctionRoundItem,
+    AuctionRoundResult,
     AuctionSource,
     AuctionStatsResponse,
     AuctionStatus,
     AuctionUpsertItem,
+    BidResultListItem,
+    BidResultListQuery,
+    BidResultSort,
     CategorySubStat,
     MovableDetails,
     PropertyCategory,
     RealtyDetails,
+    RealtyListItem,
+    RealtyListQuery,
+    RealtySort,
     RightsAnalysisSummary,
     SourceStat,
     VehicleCategory,
@@ -54,6 +62,13 @@ from app.infrastructure.db.models import (
 
 
 _ACTIVE_STATUSES = (AuctionStatus.SCHEDULED.value, AuctionStatus.ONGOING.value)
+
+
+def _round_label(pbct_nsq: str | None, pbct_sn: str | None) -> str | None:
+    """회차/차수 표기 결합 — 둘 다 있으면 'nsq-sn', 하나만 있으면 그 값."""
+    if pbct_nsq and pbct_sn:
+        return f"{pbct_nsq}-{pbct_sn}"
+    return pbct_nsq or pbct_sn
 
 
 class DBAuctionRepository(AuctionRepository):
@@ -181,6 +196,8 @@ class DBAuctionRepository(AuctionRepository):
                 AuctionORM.asset_type.label("asset_type"),
                 AuctionORM.status.label("status"),
                 AuctionORM.title.label("title"),
+                AuctionORM.cltr_mng_no.label("cltr_mng_no"),
+                AuctionORM.prpt_div_nm.label("prpt_div_nm"),
                 AuctionORM.address.label("address"),
                 AuctionORM.region_sido.label("region_sido"),
                 AuctionORM.region_sigungu.label("region_sigungu"),
@@ -244,6 +261,8 @@ class DBAuctionRepository(AuctionRepository):
                 asset_type=r.asset_type,
                 status=r.status,
                 title=r.title,
+                cltr_mng_no=r.cltr_mng_no,
+                prpt_div_nm=r.prpt_div_nm,
                 address=r.address,
                 region_sido=r.region_sido,
                 region_sigungu=r.region_sigungu,
@@ -294,6 +313,42 @@ class DBAuctionRepository(AuctionRepository):
         async with self._session_factory() as session:
             result = await session.execute(stmt)
             row = result.first()
+
+            # 같은 물건(cltr_mng_no)의 전체 회차 + 확정 결과 (있으면)
+            rounds_rows: list[Any] = []
+            if row is not None:
+                a0: AuctionORM = row[0]
+                if a0.source == AuctionSource.ONBID and a0.cltr_mng_no:
+                    rounds_stmt = (
+                        select(
+                            AuctionORM.id,
+                            AuctionORM.pbct_cdtn_no,
+                            AuctionORM.pbct_nsq,
+                            AuctionORM.pbct_sn,
+                            AuctionORM.status,
+                            AuctionORM.min_bid_price,
+                            AuctionORM.min_bid_price_text,
+                            AuctionORM.bid_begin_at,
+                            AuctionORM.bid_end_at,
+                            AuctionBidResultORM.winning_bid_amount,
+                            AuctionBidResultORM.apsl_scfb_ratio,
+                            AuctionBidResultORM.valid_bidder_count,
+                            AuctionBidResultORM.opbd_at,
+                        )
+                        .outerjoin(
+                            AuctionBidResultORM,
+                            AuctionBidResultORM.auction_id == AuctionORM.id,
+                        )
+                        .where(
+                            AuctionORM.source == AuctionSource.ONBID.value,
+                            AuctionORM.cltr_mng_no == a0.cltr_mng_no,
+                        )
+                        .order_by(
+                            AuctionORM.bid_begin_at.asc().nullslast(),
+                            AuctionORM.pbct_cdtn_no.asc().nullslast(),
+                        )
+                    )
+                    rounds_rows = list((await session.execute(rounds_stmt)).all())
 
         if row is None:
             return None
@@ -355,6 +410,34 @@ class DBAuctionRepository(AuctionRepository):
                 product_name=movable.product_name,
             )
 
+        rounds = [
+            AuctionRoundItem(
+                auction_id=rr.id,
+                pbct_cdtn_no=rr.pbct_cdtn_no,
+                round_label=_round_label(rr.pbct_nsq, rr.pbct_sn),
+                status=rr.status,
+                min_bid_price=rr.min_bid_price,
+                min_bid_price_text=rr.min_bid_price_text,
+                bid_begin_at=rr.bid_begin_at,
+                bid_end_at=rr.bid_end_at,
+                is_current=rr.id == a.id,
+                result=(
+                    AuctionRoundResult(
+                        winning_bid_amount=rr.winning_bid_amount,
+                        apsl_scfb_ratio=(
+                            float(rr.apsl_scfb_ratio)
+                            if rr.apsl_scfb_ratio is not None else None
+                        ),
+                        valid_bidder_count=rr.valid_bidder_count,
+                        opbd_at=rr.opbd_at,
+                    )
+                    if rr.opbd_at is not None or rr.winning_bid_amount is not None
+                    else None
+                ),
+            )
+            for rr in rounds_rows
+        ]
+
         return AuctionDetail(
             id=a.id,
             source=a.source,
@@ -411,6 +494,7 @@ class DBAuctionRepository(AuctionRepository):
             evc_rsby_target=a.evc_rsby_target,
             details=details,
             rights_analysis=rights,
+            rounds=rounds,
         )
 
     # ---------- ingest upsert ----------
@@ -976,6 +1060,240 @@ class DBAuctionRepository(AuctionRepository):
                 )
             await session.commit()
 
+    # ---------- bid result list ----------
+    async def list_bid_results(
+        self, q: BidResultListQuery
+    ) -> tuple[list[BidResultListItem], int]:
+        a = AuctionORM
+        br = AuctionBidResultORM
+        rd = AuctionRealtyDetailsORM
+
+        conditions: list[Any] = []
+        if q.asset_type is not None:
+            conditions.append(a.asset_type == q.asset_type.value)
+        if q.property_category:
+            conditions.append(
+                rd.property_category.in_([c.value for c in q.property_category])
+            )
+        if q.region_sido:
+            conditions.append(a.region_sido == q.region_sido)
+        if q.region_sigungu:
+            conditions.append(a.region_sigungu == q.region_sigungu)
+        if q.result is not None:
+            conditions.append(br.status == q.result)
+        if q.opbd_from is not None:
+            conditions.append(func.date(br.opbd_at) >= q.opbd_from)
+        if q.opbd_to is not None:
+            conditions.append(func.date(br.opbd_at) <= q.opbd_to)
+
+        base = (
+            select(
+                br.auction_id, br.cltr_mng_no,
+                br.status.label("result"),
+                br.winning_bid_amount, br.apsl_scfb_ratio, br.lowst_scfb_ratio,
+                br.valid_bidder_count, br.opbd_at,
+                a.asset_type, a.title, a.address,
+                a.region_sido, a.region_sigungu,
+                a.prpt_div_nm, a.thumbnail_url,
+                a.appraisal_price, a.min_bid_price, a.failed_count,
+                rd.property_category,
+            )
+            .select_from(br)
+            .join(a, a.id == br.auction_id)
+            .outerjoin(rd, rd.auction_id == a.id)
+            .where(*conditions)
+        )
+
+        sort_orders = {
+            BidResultSort.OPBD_AT_DESC: br.opbd_at.desc().nullslast(),
+            BidResultSort.RATIO_DESC: br.apsl_scfb_ratio.desc().nullslast(),
+            BidResultSort.RATIO_ASC: br.apsl_scfb_ratio.asc().nullslast(),
+        }
+        list_stmt = (
+            base
+            .order_by(sort_orders[q.sort], br.auction_id.desc())
+            .offset(q.offset)
+            .limit(q.limit)
+        )
+        count_stmt = (
+            select(func.count())
+            .select_from(br)
+            .join(a, a.id == br.auction_id)
+            .outerjoin(rd, rd.auction_id == a.id)
+            .where(*conditions)
+        )
+
+        async with self._session_factory() as session:
+            rows = (await session.execute(list_stmt)).all()
+            total = (await session.execute(count_stmt)).scalar_one()
+
+        items = [
+            BidResultListItem(
+                auction_id=r.auction_id,
+                cltr_mng_no=r.cltr_mng_no,
+                asset_type=r.asset_type,
+                property_category=r.property_category,
+                title=r.title,
+                address=r.address,
+                region_sido=r.region_sido,
+                region_sigungu=r.region_sigungu,
+                prpt_div_nm=r.prpt_div_nm,
+                thumbnail_url=r.thumbnail_url,
+                appraisal_price=r.appraisal_price,
+                min_bid_price=r.min_bid_price,
+                result=r.result,
+                winning_bid_amount=r.winning_bid_amount,
+                apsl_scfb_ratio=(
+                    float(r.apsl_scfb_ratio)
+                    if r.apsl_scfb_ratio is not None else None
+                ),
+                lowst_scfb_ratio=(
+                    float(r.lowst_scfb_ratio)
+                    if r.lowst_scfb_ratio is not None else None
+                ),
+                valid_bidder_count=r.valid_bidder_count,
+                opbd_at=r.opbd_at,
+                failed_count=r.failed_count or 0,
+            )
+            for r in rows
+        ]
+        return items, int(total)
+
+    # ---------- realty list ----------
+    async def list_realty(
+        self, q: RealtyListQuery
+    ) -> tuple[list[RealtyListItem], int]:
+        a = AuctionORM
+        rd = AuctionRealtyDetailsORM
+
+        # get_in_bbox와 동일한 대표 회차 dedup 규칙
+        status_priority = case(
+            (a.status == AuctionStatus.ONGOING.value, 1),
+            (a.status == AuctionStatus.SCHEDULED.value, 2),
+            (a.status == AuctionStatus.SOLD.value, 3),
+            (a.status == AuctionStatus.FAILED.value, 4),
+            (a.status == AuctionStatus.CANCELLED.value, 5),
+            else_=99,
+        )
+        dedup_key = func.coalesce(
+            a.cltr_mng_no,
+            a.case_number,
+            func.cast(a.id, String),
+        )
+
+        conditions: list[Any] = [a.asset_type == AssetType.REALTY.value]
+        if q.property_category:
+            conditions.append(
+                rd.property_category.in_([c.value for c in q.property_category])
+            )
+        if q.region_sido:
+            conditions.append(a.region_sido == q.region_sido)
+        if q.region_sigungu:
+            conditions.append(a.region_sigungu == q.region_sigungu)
+        if q.appraisal_price_min is not None:
+            conditions.append(a.appraisal_price >= q.appraisal_price_min)
+        if q.appraisal_price_max is not None:
+            conditions.append(a.appraisal_price <= q.appraisal_price_max)
+        if q.min_bid_price_min is not None or q.min_bid_price_max is not None:
+            # 가격 범위 필터 시 비공개(숫자 파싱 불가) 물건 제외
+            conditions.append(a.min_bid_price.is_not(None))
+            if q.min_bid_price_min is not None:
+                conditions.append(a.min_bid_price >= q.min_bid_price_min)
+            if q.min_bid_price_max is not None:
+                conditions.append(a.min_bid_price <= q.min_bid_price_max)
+        if q.failed_count_min is not None:
+            conditions.append(a.failed_count >= q.failed_count_min)
+        if q.failed_count_max is not None:
+            conditions.append(a.failed_count <= q.failed_count_max)
+        if q.land_sqms_min is not None:
+            conditions.append(rd.land_sqms >= q.land_sqms_min)
+        if q.land_sqms_max is not None:
+            conditions.append(rd.land_sqms <= q.land_sqms_max)
+        if q.bld_sqms_min is not None:
+            conditions.append(rd.bld_sqms >= q.bld_sqms_min)
+        if q.bld_sqms_max is not None:
+            conditions.append(rd.bld_sqms <= q.bld_sqms_max)
+        if q.status is not None:
+            conditions.append(a.status == q.status.value)
+
+        inner = (
+            select(
+                a.id, a.source, a.status, a.title,
+                a.cltr_mng_no, a.prpt_div_nm, a.dsps_mthod_nm,
+                a.address, a.region_sido, a.region_sigungu,
+                a.appraisal_price, a.min_bid_price, a.min_bid_price_text,
+                a.apsl_lowst_ratio,
+                a.bid_begin_at, a.bid_end_at,
+                a.failed_count, a.thumbnail_url, a.created_at,
+                rd.property_category, rd.land_sqms, rd.bld_sqms,
+                ST_X(a.location).label("lng"),
+                ST_Y(a.location).label("lat"),
+            )
+            .join(rd, rd.auction_id == a.id)
+            .distinct(dedup_key)
+            .where(*conditions)
+            .order_by(
+                dedup_key,
+                status_priority,
+                a.bid_end_at.asc().nullslast(),
+                a.id,
+            )
+        )
+        sub = inner.subquery()
+
+        sort_orders = {
+            RealtySort.NEWEST: sub.c.created_at.desc(),
+            RealtySort.DEADLINE: sub.c.bid_end_at.asc().nullslast(),
+            RealtySort.PRICE_ASC: sub.c.min_bid_price.asc().nullslast(),
+            RealtySort.PRICE_DESC: sub.c.min_bid_price.desc().nullslast(),
+            RealtySort.RATIO_ASC: sub.c.apsl_lowst_ratio.asc().nullslast(),
+            RealtySort.FAILED_COUNT: sub.c.failed_count.desc().nullslast(),
+        }
+        list_stmt = (
+            select(sub)
+            .order_by(sort_orders[q.sort], sub.c.id.desc())
+            .offset(q.offset)
+            .limit(q.limit)
+        )
+        count_stmt = select(func.count()).select_from(sub)
+
+        async with self._session_factory() as session:
+            rows = (await session.execute(list_stmt)).all()
+            total = (await session.execute(count_stmt)).scalar_one()
+
+        items = [
+            RealtyListItem(
+                id=r.id,
+                source=r.source,
+                status=r.status,
+                title=r.title,
+                cltr_mng_no=r.cltr_mng_no,
+                prpt_div_nm=r.prpt_div_nm,
+                dsps_mthod_nm=r.dsps_mthod_nm,
+                address=r.address,
+                region_sido=r.region_sido,
+                region_sigungu=r.region_sigungu,
+                lat=float(r.lat) if r.lat is not None else None,
+                lng=float(r.lng) if r.lng is not None else None,
+                appraisal_price=r.appraisal_price,
+                min_bid_price=r.min_bid_price,
+                min_bid_price_text=r.min_bid_price_text,
+                apsl_lowst_ratio=(
+                    float(r.apsl_lowst_ratio)
+                    if r.apsl_lowst_ratio is not None else None
+                ),
+                bid_begin_at=r.bid_begin_at,
+                bid_end_at=r.bid_end_at,
+                failed_count=r.failed_count or 0,
+                thumbnail_url=r.thumbnail_url,
+                property_category=r.property_category or PropertyCategory.ETC,
+                land_sqms=float(r.land_sqms) if r.land_sqms is not None else None,
+                bld_sqms=float(r.bld_sqms) if r.bld_sqms is not None else None,
+            )
+            for r in rows
+        ]
+        return items, int(total)
+
     # ---------- vehicle list / stats ----------
     async def list_vehicles(
         self, q: VehicleListQuery
@@ -1012,6 +1330,7 @@ class DBAuctionRepository(AuctionRepository):
         list_stmt = (
             select(
                 a.id, a.source, a.status, a.title,
+                a.cltr_mng_no, a.prpt_div_nm,
                 a.region_sido, a.region_sigungu,
                 a.appraisal_price, a.min_bid_price,
                 a.bid_begin_at, a.bid_end_at, a.fee_rate,
@@ -1042,6 +1361,8 @@ class DBAuctionRepository(AuctionRepository):
                 source=r.source,
                 status=r.status,
                 title=r.title,
+                cltr_mng_no=r.cltr_mng_no,
+                prpt_div_nm=r.prpt_div_nm,
                 region_sido=r.region_sido,
                 region_sigungu=r.region_sigungu,
                 appraisal_price=r.appraisal_price,

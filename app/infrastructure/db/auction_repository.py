@@ -221,6 +221,9 @@ class DBAuctionRepository(AuctionRepository):
             inner = inner.where(AuctionORM.asset_type == asset_type.value)
         if status is not None:
             inner = inner.where(AuctionORM.status == status.value)
+        else:
+            # 미지정이면 진행중·예정만 — 종료 회차가 bid_end_at ASC 정렬로 limit 자리를 먼저 차지하지 않게.
+            inner = inner.where(AuctionORM.status.in_(_ACTIVE_STATUSES))
         if property_category is not None:
             inner = inner.join(
                 AuctionRealtyDetailsORM,
@@ -1215,6 +1218,9 @@ class DBAuctionRepository(AuctionRepository):
             conditions.append(rd.bld_sqms <= q.bld_sqms_max)
         if q.status is not None:
             conditions.append(a.status == q.status.value)
+        else:
+            # 미지정이면 진행중·예정만 (get_in_bbox와 동일 규칙)
+            conditions.append(a.status.in_(_ACTIVE_STATUSES))
 
         inner = (
             select(

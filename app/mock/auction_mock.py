@@ -46,6 +46,9 @@ from app.domain.auction.schemas import (
 
 _NOW = datetime.now(timezone.utc)
 
+# DB 구현의 _ACTIVE_STATUSES와 동일 — status 미지정 목록 조회의 기본 필터
+_ACTIVE_STATUSES = (AuctionStatus.SCHEDULED, AuctionStatus.ONGOING)
+
 _MOCK_ITEMS: list[AuctionListItem] = [
     AuctionListItem(
         id=1001,
@@ -276,6 +279,16 @@ _MOCK_ITEMS: list[AuctionListItem] = [
         lat=33.4996, lng=126.5312,
         appraisal_price=540_000_000, min_bid_price=432_000_000,
         bid_end_at=_NOW + timedelta(days=12), fee_rate=80.0, failed_count=0,
+    ),
+    # 종료 회차 — status 미지정 bbox 조회에서는 빠져야 한다
+    AuctionListItem(
+        id=1121, source=AuctionSource.ONBID, asset_type=AssetType.REALTY,
+        status=AuctionStatus.SOLD, title="서울 강남 아파트 낙찰 (mock)",
+        address="서울특별시 강남구 대치동 316",
+        region_sido="서울특별시", region_sigungu="강남구",
+        lat=37.4994, lng=127.0628,
+        appraisal_price=1_200_000_000, min_bid_price=960_000_000,
+        bid_end_at=_NOW - timedelta(days=10), fee_rate=80.0, failed_count=1,
     ),
 ]
 
@@ -614,6 +627,8 @@ class MockAuctionRepository(AuctionRepository):
                 continue
             if status is not None and a.status != status:
                 continue
+            if status is None and a.status not in _ACTIVE_STATUSES:
+                continue
             result.append(a)
         return result[:limit]
 
@@ -863,6 +878,8 @@ class MockAuctionRepository(AuctionRepository):
             ):
                 return False
             if q.status is not None and r.status != q.status:
+                return False
+            if q.status is None and r.status not in _ACTIVE_STATUSES:
                 return False
             return True
 

@@ -80,6 +80,15 @@ def test_sort_failed_count_desc():
     assert counts == sorted(counts, reverse=True)
 
 
+def test_status_omitted_returns_active_only():
+    res = client.get("/api/v1/realty?limit=100")
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) > 0
+    for item in items:
+        assert item["status"] in ("scheduled", "ongoing")
+
+
 def test_status_alias_filter():
     res = client.get("/api/v1/realty?status=sold&limit=50")
     assert res.status_code == 200

@@ -35,7 +35,9 @@ async def list_realty(
     land_sqms_max: float | None = Query(None, ge=0, description="토지면적 상한 (m²)"),
     bld_sqms_min: float | None = Query(None, ge=0, description="건물면적 하한 (m²)"),
     bld_sqms_max: float | None = Query(None, ge=0, description="건물면적 상한 (m²)"),
-    auction_status: AuctionStatus | None = Query(None, alias="status"),
+    auction_status: AuctionStatus | None = Query(
+        None, alias="status", description="미지정 시 scheduled+ongoing만",
+    ),
     sort: RealtySort = Query(
         RealtySort.NEWEST,
         description="newest/deadline/price_asc/price_desc/ratio_asc/failed_count",

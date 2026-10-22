@@ -44,7 +44,9 @@ async def list_auctions_in_bbox(
     vehicle_category: VehicleCategory | None = Query(
         None, description="asset_type=vehicle일 때 의미 있음",
     ),
-    auction_status: AuctionStatus | None = Query(None, alias="status"),
+    auction_status: AuctionStatus | None = Query(
+        None, alias="status", description="미지정 시 scheduled+ongoing만",
+    ),
     limit: int = Query(200, ge=1, le=500),
     service: AuctionService = Depends(get_auction_service),
 ) -> AuctionListResponse:

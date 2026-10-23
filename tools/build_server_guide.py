@@ -1,7 +1,7 @@
 """FastAPI app의 OpenAPI 스펙 → docs/server-api-guide.html 빌드.
 
-main.app.openapi()를 파싱해 12개 endpoint를 카테고리화한 단일 HTML 페이지를 생성.
-include_in_schema=False 로 숨겨진 cron 엔드포인트는 수동 보강.
+main.app의 OpenAPI 스펙을 파싱해 endpoint를 카테고리화한 단일 HTML 페이지를 생성.
+include_in_schema=False 로 숨겨진 admin 라우트는 스펙 생성 시 포함하고, cron 엔드포인트는 수동 보강.
 
 직접 실행:
     .venv/Scripts/python.exe tools/build_server_guide.py
@@ -38,10 +38,14 @@ CATEGORIES: list[dict] = [
      "auth": "public",
      "match": lambda p: p.startswith("/api/v1/vehicles")},
     {"id": "admin", "title": "관리/보강 (Admin)",
-     "subtitle": "온비드 데이터 수동 동기화 및 enrich (현재 인증 게이트 없음, local 한정)",
+     "subtitle": "온비드 데이터 수동 동기화 및 enrich — X-Admin-Key 헤더 필수 (런타임 OpenAPI에는 비공개)",
      "icon": "🛠️",
-     "use_when": "수동으로 ingest를 돌리거나, 사진·입찰결과를 보강해야 할 때 (운영에서는 직접 호출 자제)",
-     "auth": "admin-local",
+     "use_when": (
+         "수동으로 ingest를 돌리거나 사진·입찰결과·누락 회차를 보강해야 할 때. "
+         "요청마다 X-Admin-Key 헤더에 ADMIN_API_KEY 값을 넣는다 — 키가 틀리면 401, "
+         "local 외 환경에서 서버에 ADMIN_API_KEY가 없으면 503 (local은 키 미설정 시 통과)"
+     ),
+     "auth": "admin-key",
      "match": lambda p: p.startswith("/api/v1/admin")},
     {"id": "internal", "title": "시스템/내부 (Internal)",
      "subtitle": "Cloud Scheduler·헬스체크 등 내부 트리거", "icon": "⚙️",
@@ -83,8 +87,34 @@ MANUAL_PATHS: dict[str, dict] = {
 
 
 def load_spec() -> dict:
+    """앱 OpenAPI 스펙 — 스키마에서 숨긴 admin 라우트도 가이드에는 포함한다.
+
+    admin 라우터는 include_in_schema=False라 app.openapi()에서 빠진다. 런타임
+    /openapi.json(운영에선 비활성)은 그대로 두고, 레포 내부 운영 문서에만 싣는다.
+    """
+    import copy
+
+    from fastapi.openapi.utils import get_openapi
+    from fastapi.routing import APIRoute
+
     from main import app  # noqa: E402
-    return app.openapi()
+
+    routes = []
+    for route in app.routes:
+        if (
+            isinstance(route, APIRoute)
+            and not route.include_in_schema
+            and route.path.startswith("/api/v1/admin")
+        ):
+            route = copy.copy(route)
+            route.include_in_schema = True
+        routes.append(route)
+    return get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=routes,
+    )
 
 
 def resolve_ref(ref: str, spec: dict) -> tuple[str, dict]:
@@ -545,8 +575,8 @@ def render_endpoint(method: str, path: str, operation: dict, spec: dict, cat: di
             )
 
     auth_class = cat["auth"]
-    auth_label = {"public": "🌐 공개", "admin-local": "🔒 Admin (local)", "oidc": "🔑 OIDC 필요"}.get(auth_class, "")
-    auth_klass = {"public": "public", "admin-local": "admin", "oidc": "oidc"}.get(auth_class, "public")
+    auth_label = {"public": "🌐 공개", "admin-key": "🔒 X-Admin-Key 필요", "oidc": "🔑 OIDC 필요"}.get(auth_class, "")
+    auth_klass = {"public": "public", "admin-key": "admin", "oidc": "oidc"}.get(auth_class, "public")
 
     full_url = f"{PROD_BASE}{path}"
     kv_html = (

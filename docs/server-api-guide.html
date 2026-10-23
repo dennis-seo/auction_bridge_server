@@ -360,15 +360,15 @@ curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles/
   <div class="cat-header">
     <div class="icon">🛠️</div>
     <h3>관리/보강 (Admin)</h3>
-    <div class="sub">온비드 데이터 수동 동기화 및 enrich (현재 인증 게이트 없음, local 한정)</div>
+    <div class="sub">온비드 데이터 수동 동기화 및 enrich — X-Admin-Key 헤더 필수 (런타임 OpenAPI에는 비공개)</div>
   </div>
-  <div class="cat-when"><strong>언제 쓰나요?</strong> 수동으로 ingest를 돌리거나, 사진·입찰결과를 보강해야 할 때 (운영에서는 직접 호출 자제)</div>
+  <div class="cat-when"><strong>언제 쓰나요?</strong> 수동으로 ingest를 돌리거나 사진·입찰결과·누락 회차를 보강해야 할 때. 요청마다 X-Admin-Key 헤더에 ADMIN_API_KEY 값을 넣는다 — 키가 틀리면 401, local 외 환경에서 서버에 ADMIN_API_KEY가 없으면 503 (local은 키 미설정 시 통과)</div>
   
 <div class="api-card" id="post-api-v1-admin-backfill-geocoding">
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/backfill/geocoding</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">동 centroid에 뭉친 매물 좌표를 parcel 단위로 재지오코딩</div>
   
@@ -377,10 +377,10 @@ curl -s &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/vehicles/
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/backfill/geocoding
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/backfill/geocoding&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/backfill/geocoding&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (4개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>dry_run</td><td class='type'>boolean</td><td><span class="badge opt">선택</span></td><td class='sample'>True</td><td>true면 DB 변경 없이 결과만 반환.</td></tr><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>200</td><td>Limit</td></tr><tr><td class='name'><span class="badge in query">query</span>min_cluster</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>2</td><td>이 수 이상 누적된 location만 대상.</td></tr><tr><td class='name'><span class="badge in query">query</span>concurrency</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>10</td><td>Concurrency</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (5개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>dry_run</td><td class='type'>boolean</td><td><span class="badge opt">선택</span></td><td class='sample'>True</td><td>true면 DB 변경 없이 결과만 반환.</td></tr><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>200</td><td>Limit</td></tr><tr><td class='name'><span class="badge in query">query</span>min_cluster</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>2</td><td>이 수 이상 누적된 location만 대상.</td></tr><tr><td class='name'><span class="badge in query">query</span>concurrency</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>10</td><td>Concurrency</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -392,7 +392,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/bid-info</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">#7 물건상세 입찰정보로 auctions.bid_info 보강</div>
   
@@ -401,10 +401,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-info
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-info&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-info&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (1개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (2개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -416,7 +416,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/bid-results</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">만료된 ongoing 매물의 입찰결과를 보강 (status: SOLD/FAILED/CANCELLED 확정)</div>
   
@@ -425,10 +425,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (1개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (2개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -440,7 +440,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/bid-results-list</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">#8 입찰결과목록으로 최근 개찰분 일괄 보강 (호출 수 절감)</div>
   
@@ -449,10 +449,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results-list
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results-list&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/bid-results-list&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (3개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>days_lookback</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>2</td><td>Days Lookback</td></tr><tr><td class='name'><span class="badge in query">query</span>num_of_rows</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>100</td><td>Num Of Rows</td></tr><tr><td class='name'><span class="badge in query">query</span>max_pages</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>20</td><td>Max Pages</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (4개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>days_lookback</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>2</td><td>Days Lookback</td></tr><tr><td class='name'><span class="badge in query">query</span>num_of_rows</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>100</td><td>Num Of Rows</td></tr><tr><td class='name'><span class="badge in query">query</span>max_pages</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>20</td><td>Max Pages</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -464,7 +464,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/cltr-default-round</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">단일 cltr_mng_no 핀포인트 — OnBid 노출 회차 1건 INSERT (Phase A/B 미해결 매물용)</div>
   
@@ -473,10 +473,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/cltr-default-round?cltr_mng_no=value
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/cltr-default-round?cltr_mng_no=value&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/cltr-default-round?cltr_mng_no=value&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (1개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>cltr_mng_no</td><td class='type'>string</td><td><span class="badge req">필수</span></td><td class='sample'></td><td>Cltr Mng No</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (2개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>cltr_mng_no</td><td class='type'>string</td><td><span class="badge req">필수</span></td><td class='sample'></td><td>Cltr Mng No</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -488,7 +488,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/missing-default-rounds-auto</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">1회차 누락 의심 cltr 자동 검출 + 일괄 핀포인트 보강</div>
   
@@ -497,10 +497,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/missing-default-rounds-auto
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/missing-default-rounds-auto&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/missing-default-rounds-auto&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (3개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr><tr><td class='name'><span class="badge in query">query</span>dry_run</td><td class='type'>boolean</td><td><span class="badge opt">선택</span></td><td class='sample'>True</td><td>Dry Run</td></tr><tr><td class='name'><span class="badge in query">query</span>ratio</td><td class='type'>number</td><td><span class="badge opt">선택</span></td><td class='sample'>0.95</td><td>Ratio</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (4개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr><tr><td class='name'><span class="badge in query">query</span>dry_run</td><td class='type'>boolean</td><td><span class="badge opt">선택</span></td><td class='sample'>True</td><td>Dry Run</td></tr><tr><td class='name'><span class="badge in query">query</span>ratio</td><td class='type'>number</td><td><span class="badge opt">선택</span></td><td class='sample'>0.95</td><td>Ratio</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -512,7 +512,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/missing-rounds</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">D안 Phase B — 공고 단위 누락 회차 보강 (#18 getPbancCltrInf2)</div>
   
@@ -521,10 +521,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/missing-rounds
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/missing-rounds&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/missing-rounds&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (1개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>100</td><td>Limit</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (2개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>100</td><td>Limit</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -536,7 +536,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/movable-images</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">동산 상세 API(#5)로 image_urls 보강</div>
   
@@ -545,10 +545,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/movable-images
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/movable-images&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/movable-images&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (1개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (2개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -560,7 +560,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/pbanc-resolve</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">D안 Phase A — pbanc_mng_no 매핑 해결 (#15 getPbancList2)</div>
   
@@ -569,10 +569,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/pbanc-resolve
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/pbanc-resolve&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/pbanc-resolve&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (1개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>200</td><td>Limit</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (2개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>200</td><td>Limit</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -584,7 +584,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/enrich/realty-images</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">부동산 상세 API로 image_urls 보강 (일일 쿼터 주의)</div>
   
@@ -593,10 +593,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/realty-images
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/realty-images&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/enrich/realty-images&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (1개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (2개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>limit</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Limit</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>
@@ -608,7 +608,7 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
   <div class="api-title-row">
     <span class="method post">POST</span>
     <span class="path-mono">/api/v1/admin/sync/onbid</span>
-    <span class="auth-badge admin">🔒 Admin (local)</span>
+    <span class="auth-badge admin">🔒 X-Admin-Key 필요</span>
   </div>
   <div class="api-summary">온비드 데이터 수동 동기화 (개발용)</div>
   
@@ -617,10 +617,10 @@ curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/a
     <div class="codeblock"><span class="verb">POST</span> https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/sync/onbid
 
 # bash
-curl -s -X POST &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/sync/onbid&quot;</div>
+curl -s -X POST -H &quot;X-Admin-Key: &lt;value&gt;&quot; &quot;https://auctionbridge-api-ak2wcqba2q-du.a.run.app/api/v1/admin/sync/onbid&quot;</div>
   </details>
-  <details><summary>요청 파라미터 (3개)</summary>
-    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>asset</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>자산타입. &#x27;realty&#x27;|&#x27;movable&#x27;|&#x27;vehicle&#x27;. 미지정 시 전체.</td></tr><tr><td class='name'><span class="badge in query">query</span>pages</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>1</td><td>Pages</td></tr><tr><td class='name'><span class="badge in query">query</span>num_of_rows</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Num Of Rows</td></tr></tbody></table>
+  <details><summary>요청 파라미터 (4개)</summary>
+    <table class='params'><thead><tr><th>위치/이름</th><th>타입</th><th>필수</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td class='name'><span class="badge in query">query</span>asset</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>자산타입. &#x27;realty&#x27;|&#x27;movable&#x27;|&#x27;vehicle&#x27;. 미지정 시 전체.</td></tr><tr><td class='name'><span class="badge in query">query</span>pages</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>1</td><td>Pages</td></tr><tr><td class='name'><span class="badge in query">query</span>num_of_rows</td><td class='type'>integer</td><td><span class="badge opt">선택</span></td><td class='sample'>50</td><td>Num Of Rows</td></tr><tr><td class='name'><span class="badge in header">header</span>X-Admin-Key</td><td class='type'>string</td><td><span class="badge opt">선택</span></td><td class='sample'></td><td>X-Admin-Key</td></tr></tbody></table>
   </details>
   
   <details><summary>응답</summary>

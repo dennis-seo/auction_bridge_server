@@ -1,4 +1,6 @@
-fastapi[standard]>=0.115.0
+# <0.137: 0.137부터 include_router가 _IncludedRouter로 감싸져 slowapi가 /api/v1 라우트를
+# 못 찾고 레이트리밋을 건너뛴다. 올리기 전에 tests/test_rate_limit.py 통과 확인.
+fastapi[standard]>=0.115.0,<0.137
 uvicorn[standard]>=0.30.0
 pydantic>=2.7.0
 pydantic-settings>=2.4.0

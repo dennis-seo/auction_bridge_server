@@ -33,8 +33,8 @@ git push origin main
 
 # Trigger ingest manually
 gcloud scheduler jobs run daily-onbid-ingest --location=asia-northeast3
-# or via authenticated admin endpoint (no auth gate currently — local-only)
-curl -X POST "$BASE/api/v1/admin/sync/onbid?pages=20&num_of_rows=200"
+# or via admin endpoint (requires X-Admin-Key header matching ADMIN_API_KEY; fail-closed when unset in non-local)
+curl -X POST "$BASE/api/v1/admin/sync/onbid?pages=20&num_of_rows=200" -H "X-Admin-Key: $ADMIN_API_KEY"
 
 # Cloud Run logs (prod reads need user authorization in this repo's playbook)
 gcloud run services logs read auctionbridge-api --region=asia-northeast3 --limit=200

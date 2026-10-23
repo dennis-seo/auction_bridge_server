@@ -16,6 +16,9 @@ passlib[bcrypt]>=1.7.4
 # HTTP client (Kakao OAuth, Local API, Onbid)
 httpx>=0.27.0
 
+# Rate limiting (per-IP, 인스턴스 로컬)
+slowapi>=0.1.9
+
 # Cloud Scheduler OIDC 검증 (requests transport 사용)
 google-auth>=2.30.0
 requests>=2.32.0

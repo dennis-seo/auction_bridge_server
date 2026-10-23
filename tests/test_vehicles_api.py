@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 os.environ.setdefault("USE_MOCK", "true")
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 from fastapi.testclient import TestClient  # noqa: E402
 

@@ -13,13 +13,6 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# 시크릿을 노출하지 않으면서 Cloud Run에서 실제 어떤 endpoint를 보고 있는지 확인.
-_p = urlparse(settings.DATABASE_URL)
-logger.warning(
-    "DB engine config — scheme=%s user=%s host=%s port=%s db=%s",
-    _p.scheme, _p.username, _p.hostname, _p.port, (_p.path or "/").lstrip("/"),
-)
-
 
 def _is_supabase_pooler(url: str) -> bool:
     """Supabase Transaction/Session Pooler 호스트 여부.
@@ -40,10 +33,16 @@ if _is_pooler:
     # Supabase Transaction Pooler는 PREPARE를 캐시 못 함 → asyncpg statement cache 끔.
     _connect_args = {"statement_cache_size": 0, "prepared_statement_cache_size": 0}
 
+# 시크릿/접속정보(user·host·db)를 로그에 남기지 않는다. 진단에 필요한 건 pooler 여부뿐.
+logger.info("DB engine init (supabase_pooler=%s)", _is_pooler)
+
+# SQL echo는 바인딩 파라미터(주소·차량번호 등 PII)를 로그로 흘리므로 local에서만 허용.
+_echo = settings.APP_DEBUG and settings.APP_ENV == "local"
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    echo=settings.APP_DEBUG,
+    echo=_echo,
     connect_args=_connect_args,
 )
 

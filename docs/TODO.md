@@ -8,7 +8,7 @@
 
 ## A. 운영 정합성 (이번 #7 PR 직속)
 
-- [ ] **A3. `/admin/*` 인증 게이트** — 현재 prod에도 무인증 노출. 간단한 헤더 토큰(`X-Admin-Key`) 또는 IP allowlist. `CLAUDE.md`의 "1차에는 인증 없이 local 한정" 주석 제거. `[P0]`
+_(A3 admin 인증 게이트 완료 — `X-Admin-Key` 헤더 + non-local fail-closed, 라우터 레벨 dependency)_
 
 ## B. 미사용 도메인 (스키마 신설 필요)
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, ClassVar, Literal, Union
 
 from pydantic import BaseModel, Field, PlainSerializer, model_validator
 
@@ -482,6 +482,10 @@ class AuctionUpsertItem(BaseModel):
 # Query params
 # =====================================================================
 class BBoxQuery(BaseModel):
+    # 지도 뷰포트 최대 span(도). 전국(위경도 ~8~9°) + 여유는 허용하되, 전 지구(-180~180)
+    # 요청으로 전체 테이블 spatial 스캔을 유발하는 DoS를 차단한다.
+    MAX_SPAN_DEG: ClassVar[float] = 15.0
+
     min_lng: float = Field(ge=-180, le=180)
     min_lat: float = Field(ge=-90, le=90)
     max_lng: float = Field(ge=-180, le=180)
@@ -498,6 +502,10 @@ class BBoxQuery(BaseModel):
             raise ValueError("min_lng must be < max_lng")
         if self.min_lat >= self.max_lat:
             raise ValueError("min_lat must be < max_lat")
+        if (self.max_lng - self.min_lng) > self.MAX_SPAN_DEG:
+            raise ValueError(f"bbox lng span too large (max {self.MAX_SPAN_DEG}°)")
+        if (self.max_lat - self.min_lat) > self.MAX_SPAN_DEG:
+            raise ValueError(f"bbox lat span too large (max {self.MAX_SPAN_DEG}°)")
         return self
 
 
